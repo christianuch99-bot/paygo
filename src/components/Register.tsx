@@ -231,6 +231,8 @@ export const Register: React.FC<RegisterProps> = ({
                 <UserIcon className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
+                  name="name"
+                  autoComplete="name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Alex Aper"
@@ -263,6 +265,8 @@ export const Register: React.FC<RegisterProps> = ({
                   <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input
                     type="email"
+                    name="email"
+                    autoComplete="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="e.g. user@gmail.com"
@@ -281,6 +285,8 @@ export const Register: React.FC<RegisterProps> = ({
                 <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   type={showPassword ? 'text' : 'password'}
+                  name="password"
+                  autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Choose password (at least 4 chars)"
@@ -305,6 +311,8 @@ export const Register: React.FC<RegisterProps> = ({
                 <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   type={showPassword ? 'text' : 'password'}
+                  name="confirmPassword"
+                  autoComplete="new-password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Confirm password"

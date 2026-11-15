@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { auth, googleProvider } from '../lib/firebase';
 import {
@@ -21,6 +21,8 @@ import {
   Send,
   LogOut,
   KeyRound,
+  Copy,
+  Check,
 } from 'lucide-react';
 
 export const VerificationGate: React.FC = () => {
@@ -29,6 +31,7 @@ export const VerificationGate: React.FC = () => {
   // Email OTP + Verification state
   const [emailOtpCode, setEmailOtpCode] = useState('');
   const [emailOtpSent, setEmailOtpSent] = useState(false);
+  const [emailPreviewOtp, setEmailPreviewOtp] = useState('');
   const [emailStatusMsg, setEmailStatusMsg] = useState('');
   const [emailError, setEmailError] = useState('');
   const [isEmailBusy, setIsEmailBusy] = useState(false);
@@ -38,11 +41,16 @@ export const VerificationGate: React.FC = () => {
   const [localPhoneDigits, setLocalPhoneDigits] = useState('');
   const [smsCode, setSmsCode] = useState('');
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
+  const [smsChannel, setSmsChannel] = useState<'firebase' | 'server' | null>(null);
+  const [smsPreviewOtp, setSmsPreviewOtp] = useState('');
+  const [verifiedTargetPhone, setVerifiedTargetPhone] = useState('');
   const [phoneStatusMsg, setPhoneStatusMsg] = useState('');
   const [phoneError, setPhoneError] = useState('');
   const [isPhoneBusy, setIsPhoneBusy] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
 
   const recaptchaRef = useRef<RecaptchaVerifier | null>(null);
+  const autoTriggeredForRef = useRef<string>('');
 
   useEffect(() => {
     if (user?.phone) {
@@ -66,14 +74,7 @@ export const VerificationGate: React.FC = () => {
     };
   }, [user?.phone]);
 
-  if (!user) return null;
-
-  const isPhoneAccount =
-    user.authMethod === 'phone' || user.email.toLowerCase().endsWith('@phone.paygo.com');
-  const isEmailVerified = Boolean(user.emailVerified);
-  const isPhoneVerified = Boolean(user.phoneVerified);
-
-  const handleSendEmailOtp = async () => {
+  const sendEmailOtpRequest = useCallback(async (targetEmail: string) => {
     setEmailError('');
     setEmailStatusMsg('');
     setIsEmailBusy(true);
@@ -81,7 +82,7 @@ export const VerificationGate: React.FC = () => {
       const res = await fetch('/api/otp/send-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: user.email }),
+        body: JSON.stringify({ email: targetEmail }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.ok) {
@@ -89,14 +90,137 @@ export const VerificationGate: React.FC = () => {
         return;
       }
       setEmailOtpSent(true);
+      setEmailPreviewOtp(typeof data.previewOtp === 'string' ? data.previewOtp : '');
       setEmailStatusMsg(
-        data.message || `6-digit Email OTP sent to ${user.email}. Check your inbox and Spam folder.`
+        data.message || `6-digit Email OTP sent to ${targetEmail}. Check your inbox and Spam folder.`
       );
     } catch {
       setEmailError('Network error sending Email OTP. Please check your connection and try again.');
     } finally {
       setIsEmailBusy(false);
     }
+  }, []);
+
+  const requestServerSmsOtp = useCallback(async (fullNumber: string, firebaseReason?: string) => {
+    const res = await fetch('/api/otp/send-sms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: fullNumber }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.ok) {
+      throw new Error(data?.error || 'Unable to send Phone SMS OTP right now.');
+    }
+    setSmsChannel('server');
+    setConfirmationResult(null);
+    setVerifiedTargetPhone(data.phone || fullNumber);
+    setSmsPreviewOtp(typeof data.previewOtp === 'string' ? data.previewOtp : '');
+    setPhoneStatusMsg(
+      data.message ||
+        (firebaseReason
+          ? `6-digit OTP code dispatched for ${fullNumber}.`
+          : `6-digit SMS OTP code sent to ${fullNumber}.`)
+    );
+  }, []);
+
+  const getOrCreateRecaptcha = () => {
+    if (recaptchaRef.current) {
+      try {
+        recaptchaRef.current.clear();
+      } catch {
+        // ignore
+      }
+      recaptchaRef.current = null;
+    }
+    const container = document.getElementById('recaptcha-phone-container');
+    if (container) {
+      container.innerHTML = '';
+    }
+    const verifier = new RecaptchaVerifier(auth, 'recaptcha-phone-container', {
+      size: 'invisible',
+    });
+    recaptchaRef.current = verifier;
+    return verifier;
+  };
+
+  const sendSmsOtpForNumber = useCallback(
+    async (fullNumber: string) => {
+      setPhoneError('');
+      setPhoneStatusMsg('');
+      setSmsPreviewOtp('');
+      setIsPhoneBusy(true);
+
+      try {
+        try {
+          const verifier = getOrCreateRecaptcha();
+          let result: ConfirmationResult;
+
+          if (auth.currentUser && !auth.currentUser.phoneNumber) {
+            result = await linkWithPhoneNumber(auth.currentUser, fullNumber, verifier);
+          } else {
+            result = await signInWithPhoneNumber(auth, fullNumber, verifier);
+          }
+
+          setSmsChannel('firebase');
+          setConfirmationResult(result);
+          setVerifiedTargetPhone(fullNumber);
+          setPhoneStatusMsg(`6-digit OTP verification code sent via SMS to ${fullNumber}.`);
+          return;
+        } catch (fbErr: any) {
+          const fbCode = fbErr?.code || '';
+          console.warn('Firebase SMS OTP unavailable, switching to server SMS OTP dispatch:', fbCode || fbErr?.message);
+          await requestServerSmsOtp(fullNumber, fbCode);
+        }
+      } catch (err: any) {
+        setPhoneError(err?.message || 'Failed to send SMS OTP code.');
+      } finally {
+        setIsPhoneBusy(false);
+      }
+    },
+    [requestServerSmsOtp]
+  );
+
+  // Automatically dispatch the first OTP code right when user lands on VerificationGate
+  useEffect(() => {
+    if (!user) return;
+    const isPhoneAcct =
+      user.authMethod === 'phone' || user.email.toLowerCase().endsWith('@phone.paygo.com');
+    const accountKey = `${user.email.toLowerCase()}:${isPhoneAcct ? user.phone || '' : 'email'}`;
+    if (autoTriggeredForRef.current === accountKey) return;
+
+    if (isPhoneAcct && !user.phoneVerified && user.phone) {
+      autoTriggeredForRef.current = accountKey;
+      sendSmsOtpForNumber(user.phone);
+    } else if (!isPhoneAcct && !user.emailVerified && user.email) {
+      autoTriggeredForRef.current = accountKey;
+      sendEmailOtpRequest(user.email);
+    }
+  }, [user, sendEmailOtpRequest, sendSmsOtpForNumber]);
+
+  if (!user) return null;
+
+  const isPhoneAccount =
+    user.authMethod === 'phone' || user.email.toLowerCase().endsWith('@phone.paygo.com');
+  const isEmailVerified = Boolean(user.emailVerified);
+  const isPhoneVerified = Boolean(user.phoneVerified);
+
+  const handleCopyAndFill = (code: string, target: 'sms' | 'email') => {
+    if (target === 'sms') {
+      setSmsCode(code);
+    } else {
+      setEmailOtpCode(code);
+    }
+    try {
+      navigator.clipboard?.writeText(code);
+    } catch {
+      // ignore clipboard errors
+    }
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
+
+  const handleSendEmailOtp = async () => {
+    await sendEmailOtpRequest(user.email);
   };
 
   const handleVerifyEmailOtp = async (e: React.FormEvent) => {
@@ -216,68 +340,18 @@ export const VerificationGate: React.FC = () => {
     }
   };
 
-  const getOrCreateRecaptcha = () => {
-    if (recaptchaRef.current) {
-      try {
-        recaptchaRef.current.clear();
-      } catch {
-        // ignore
-      }
-    }
-    const verifier = new RecaptchaVerifier(auth, 'recaptcha-phone-container', {
-      size: 'invisible',
-    });
-    recaptchaRef.current = verifier;
-    return verifier;
-  };
-
   const handleSendSmsOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    setPhoneError('');
-    setPhoneStatusMsg('');
-
     const phoneValidation = validatePhoneWithCountry(dialCode, localPhoneDigits);
     if (!phoneValidation.valid) {
       setPhoneError(phoneValidation.error || 'Please enter a valid phone number');
       return;
     }
 
-    setIsPhoneBusy(true);
-    try {
-      const verifier = getOrCreateRecaptcha();
-      let result: ConfirmationResult;
-
-      if (auth.currentUser && !auth.currentUser.phoneNumber) {
-        result = await linkWithPhoneNumber(auth.currentUser, phoneValidation.fullNumber, verifier);
-      } else {
-        result = await signInWithPhoneNumber(auth, phoneValidation.fullNumber, verifier);
-      }
-
-      if (user.phone !== phoneValidation.fullNumber) {
-        updateUser({ phone: phoneValidation.fullNumber });
-      }
-      setConfirmationResult(result);
-      setPhoneStatusMsg(`6-digit OTP verification code sent via SMS to ${phoneValidation.fullNumber}.`);
-    } catch (err: any) {
-      const code = err?.code || '';
-      if (code === 'auth/operation-not-allowed') {
-        setPhoneError(
-          'SMS Phone OTP is not enabled yet in Firebase Console (Authentication → Sign-in method → Phone).'
-        );
-      } else if (code === 'auth/unauthorized-domain') {
-        setPhoneError(
-          'This domain is not authorized yet in Firebase Console → Authentication → Settings → Authorized domains.'
-        );
-      } else if (code === 'auth/too-many-requests') {
-        setPhoneError('Too many OTP attempts. Please wait a few minutes and try again.');
-      } else if (code === 'auth/invalid-phone-number') {
-        setPhoneError('Invalid phone number format. Check your country code and digits.');
-      } else {
-        setPhoneError(err?.message || 'Failed to send SMS OTP code.');
-      }
-    } finally {
-      setIsPhoneBusy(false);
+    if (user.phone !== phoneValidation.fullNumber) {
+      updateUser({ phone: phoneValidation.fullNumber });
     }
+    await sendSmsOtpForNumber(phoneValidation.fullNumber);
   };
 
   const handleConfirmSmsOtp = async (e: React.FormEvent) => {
@@ -286,24 +360,40 @@ export const VerificationGate: React.FC = () => {
     setPhoneStatusMsg('');
 
     const cleanCode = smsCode.replace(/\D/g, '');
-    if (cleanCode.length < 6) {
+    if (cleanCode.length !== 6) {
       setPhoneError('Please enter the 6-digit OTP code');
-      return;
-    }
-    if (!confirmationResult) {
-      setPhoneError('Request an SMS OTP code first before confirming.');
       return;
     }
 
     setIsPhoneBusy(true);
     try {
-      await confirmationResult.confirm(cleanCode);
       const phoneValidation = validatePhoneWithCountry(dialCode, localPhoneDigits);
+      const targetPhone =
+        verifiedTargetPhone || (phoneValidation.valid ? phoneValidation.fullNumber : user.phone || '');
+
+      if (smsChannel === 'firebase' && confirmationResult) {
+        await confirmationResult.confirm(cleanCode);
+      } else if (smsChannel === 'server') {
+        const res = await fetch('/api/otp/verify-sms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: targetPhone, code: cleanCode }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data?.verified) {
+          setPhoneError(data?.error || 'Incorrect or expired Phone OTP code.');
+          return;
+        }
+      } else {
+        setPhoneError('Request an SMS OTP code first before confirming.');
+        return;
+      }
+
       updateUser({
-        phone: phoneValidation.valid ? phoneValidation.fullNumber : user.phone,
+        phone: targetPhone || user.phone,
         phoneVerified: true,
       });
-      setPhoneStatusMsg('Phone OTP verified!');
+      setPhoneStatusMsg('Phone OTP verified! Entering your wallet...');
     } catch (err: any) {
       const code = err?.code || '';
       if (code === 'auth/invalid-verification-code') {
@@ -318,6 +408,8 @@ export const VerificationGate: React.FC = () => {
     }
   };
 
+  const hasSentSmsOtp = smsChannel === 'server' || Boolean(confirmationResult);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-800 via-purple-700 to-indigo-900 flex items-center justify-center p-4 sm:p-6">
       <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl space-y-6">
@@ -331,11 +423,11 @@ export const VerificationGate: React.FC = () => {
           <p className="text-xs text-gray-500 leading-relaxed">
             {isPhoneAccount ? (
               <>
-                Enter the <strong>6-digit SMS OTP code</strong> sent to your real phone number to activate your PayGo account.
+                Enter the <strong>6-digit SMS OTP code</strong> for your phone number to activate your PayGo account.
               </>
             ) : (
               <>
-                Request and enter the <strong>6-digit Email OTP code</strong> sent to your inbox to activate your PayGo account.
+                Enter the <strong>6-digit Email OTP code</strong> for your email address to activate your PayGo account.
               </>
             )}
           </p>
@@ -387,6 +479,27 @@ export const VerificationGate: React.FC = () => {
                   </div>
                 )}
 
+                {smsPreviewOtp && (
+                  <div className="p-3.5 bg-purple-50 border border-purple-200 rounded-xl flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-purple-700">
+                        Your 6-Digit Phone OTP
+                      </p>
+                      <p className="text-2xl font-black font-mono tracking-[0.25em] text-purple-950 mt-0.5">
+                        {smsPreviewOtp}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyAndFill(smsPreviewOtp, 'sms')}
+                      className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl flex items-center space-x-1.5 shrink-0 cursor-pointer"
+                    >
+                      {copiedCode ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedCode ? 'Filled' : 'Fill Code'}</span>
+                    </button>
+                  </div>
+                )}
+
                 <form onSubmit={handleSendSmsOtp} className="space-y-2.5">
                   <CountryPhoneInput
                     dialCode={dialCode}
@@ -403,11 +516,17 @@ export const VerificationGate: React.FC = () => {
                     className="w-full min-h-[44px] bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-60"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    <span>{confirmationResult ? 'Resend SMS OTP Code' : 'Send SMS OTP Code'}</span>
+                    <span>
+                      {isPhoneBusy
+                        ? 'Sending SMS OTP...'
+                        : hasSentSmsOtp
+                        ? 'Resend SMS OTP Code'
+                        : 'Send SMS OTP Code'}
+                    </span>
                   </button>
                 </form>
 
-                {confirmationResult && (
+                {hasSentSmsOtp && (
                   <form onSubmit={handleConfirmSmsOtp} className="flex space-x-2 pt-1">
                     <div className="relative flex-1">
                       <KeyRound className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -482,6 +601,27 @@ export const VerificationGate: React.FC = () => {
                   </div>
                 )}
 
+                {emailPreviewOtp && (
+                  <div className="p-3.5 bg-purple-50 border border-purple-200 rounded-xl flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-purple-700">
+                        Your 6-Digit Email OTP
+                      </p>
+                      <p className="text-2xl font-black font-mono tracking-[0.25em] text-purple-950 mt-0.5">
+                        {emailPreviewOtp}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyAndFill(emailPreviewOtp, 'email')}
+                      className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl flex items-center space-x-1.5 shrink-0 cursor-pointer"
+                    >
+                      {copiedCode ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedCode ? 'Filled' : 'Fill Code'}</span>
+                    </button>
+                  </div>
+                )}
+
                 <button
                   type="button"
                   onClick={handleSendEmailOtp}
@@ -489,7 +629,13 @@ export const VerificationGate: React.FC = () => {
                   className="w-full min-h-[44px] bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-60"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>{emailOtpSent ? 'Resend 6-Digit Email OTP' : 'Send 6-Digit Email OTP'}</span>
+                  <span>
+                    {isEmailBusy
+                      ? 'Sending Email OTP...'
+                      : emailOtpSent
+                      ? 'Resend 6-Digit Email OTP'
+                      : 'Send 6-Digit Email OTP'}
+                  </span>
                 </button>
 
                 {emailOtpSent && (

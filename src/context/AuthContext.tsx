@@ -7,8 +7,82 @@ import {
   signInWithEmailAndPassword,
   signOut,
 } from 'firebase/auth';
+import { COUNTRY_DIAL_CODES } from '../data/countryCodes';
 
 const ADMIN_OWNER_EMAIL = 'ibro88977@gmail.com';
+export const SAVED_LOGIN_STORAGE_KEY = 'paygo_saved_login';
+
+export interface SavedLoginDetails {
+  method: 'email' | 'phone';
+  email?: string;
+  dialCode?: string;
+  phoneDigits?: string;
+}
+
+const hashPassword = async (rawPassword: string, accountKey: string): Promise<string> => {
+  const input = `paygo_cred_v1:${accountKey.trim().toLowerCase()}:${rawPassword}`;
+  try {
+    if (typeof crypto !== 'undefined' && crypto.subtle) {
+      const encoded = new TextEncoder().encode(input);
+      const digest = await crypto.subtle.digest('SHA-256', encoded);
+      return Array.from(new Uint8Array(digest))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+    }
+  } catch {
+    // Fallback deterministic 64-char hex below
+  }
+  let h1 = 0x811c9dc5;
+  let h2 = 0x9e3779b9;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 0x01000193);
+    h2 = Math.imul(h2 ^ ch, 0x85ebca6b);
+  }
+  const part1 = (h1 >>> 0).toString(16).padStart(8, '0');
+  const part2 = (h2 >>> 0).toString(16).padStart(8, '0');
+  return `${part1}${part2}`.repeat(4).slice(0, 64);
+};
+
+const splitPhoneParts = (fullNumber: string): { dialCode: string; phoneDigits: string } => {
+  const matched = COUNTRY_DIAL_CODES.slice()
+    .sort((a, b) => b.code.length - a.code.length)
+    .find((c) => fullNumber.startsWith(c.code));
+  if (matched) {
+    return { dialCode: matched.code, phoneDigits: fullNumber.slice(matched.code.length) };
+  }
+  return { dialCode: '+1', phoneDigits: fullNumber.replace(/\D/g, '') };
+};
+
+export const saveRememberedLogin = (details: SavedLoginDetails) => {
+  try {
+    localStorage.setItem(SAVED_LOGIN_STORAGE_KEY, JSON.stringify(details));
+  } catch {
+    // ignore storage errors
+  }
+};
+
+export const clearRememberedLogin = () => {
+  try {
+    localStorage.removeItem(SAVED_LOGIN_STORAGE_KEY);
+  } catch {
+    // ignore storage errors
+  }
+};
+
+export const getRememberedLogin = (): SavedLoginDetails | null => {
+  try {
+    const raw = localStorage.getItem(SAVED_LOGIN_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && (parsed.method === 'email' || parsed.method === 'phone')) {
+      return parsed as SavedLoginDetails;
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return null;
+};
 
 interface AuthContextType {
   user: User | null;
@@ -151,7 +225,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             prev.emailVerified === remote.emailVerified &&
             prev.phoneVerified === remote.phoneVerified &&
             prev.referralBalance === remote.referralBalance &&
-            prev.totalReferrals === remote.totalReferrals
+            prev.totalReferrals === remote.totalReferrals &&
+            prev.passwordHash === (remote.passwordHash || prev.passwordHash)
           ) {
             return prev;
           }
@@ -163,6 +238,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             phoneVerified: remote.phoneVerified ?? prev.phoneVerified,
             referralBalance: remote.referralBalance ?? prev.referralBalance,
             totalReferrals: remote.totalReferrals ?? prev.totalReferrals,
+            passwordHash: remote.passwordHash || prev.passwordHash,
           };
           try {
             const users: User[] = JSON.parse(localStorage.getItem('paygo_users') || '[]');
@@ -290,6 +366,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           error: method === 'phone' ? 'Please enter a valid phone number' : 'Please enter a valid email address',
         };
       }
+      if (!password) {
+        return { success: false, error: 'Please enter your password' };
+      }
 
       let users: User[] = JSON.parse(localStorage.getItem('paygo_users') || '[]');
       let found: User | undefined;
@@ -302,14 +381,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return { success: false, error: 'Please enter a valid phone number with country code' };
         }
 
-        found = users.find((u) => u.phone && normalizePhone(u.phone) === normalizedPhone);
+        const digitsOnly = normalizedPhone.replace(/\D/g, '');
+        const fallbackPhoneKey = `${digitsOnly}@phone.paygo.com`;
+
+        found = users.find(
+          (u) =>
+            (u.phone && normalizePhone(u.phone) === normalizedPhone) ||
+            u.email.toLowerCase() === fallbackPhoneKey
+        );
 
         if (!found) {
           try {
-            const q = query(collection(db, 'users'), where('phone', '==', normalizedPhone));
-            const snaps = await getDocs(q);
-            if (!snaps.empty) {
-              found = snaps.docs[0].data() as User;
+            const directDoc = await getDoc(doc(db, 'users', fallbackPhoneKey));
+            if (directDoc.exists()) {
+              found = directDoc.data() as User;
+            } else {
+              const q = query(collection(db, 'users'), where('phone', '==', normalizedPhone));
+              const snaps = await getDocs(q);
+              if (!snaps.empty) {
+                found = snaps.docs[0].data() as User;
+              }
+            }
+            if (found) {
               users.push(found);
               localStorage.setItem('paygo_users', JSON.stringify(users));
             }
@@ -319,31 +412,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         if (!found) {
-          const digitsOnly = normalizedPhone.replace(/\D/g, '');
-          cleanEmail = `${digitsOnly}@phone.paygo.com`;
-          found = {
-            name: normalizedPhone,
-            email: cleanEmail,
-            phone: normalizedPhone,
-            balance: 13000,
-            referralBalance: 0,
-            totalReferrals: 0,
-            accountLevel: 'Basic',
-            referralCode: `u${digitsOnly.slice(-6)}`,
-            emailVerified: false,
-            phoneVerified: false,
-            authMethod: 'phone',
+          return {
+            success: false,
+            error: 'No account found with this phone number. Please create an account first.',
           };
-          users.push(found);
-          localStorage.setItem('paygo_users', JSON.stringify(users));
-          try {
-            await setDoc(doc(db, 'users', cleanEmail), found, { merge: true });
-          } catch (err) {
-            console.warn('Cloud save fallback:', err);
-          }
-        } else {
-          cleanEmail = found.email.toLowerCase();
         }
+
+        cleanEmail = found.email.toLowerCase();
       } else {
         cleanEmail = trimmed.toLowerCase();
         if (!cleanEmail.includes('@') || !cleanEmail.includes('.')) {
@@ -352,13 +427,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const isAdminEmail = cleanEmail === ADMIN_OWNER_EMAIL;
         let firebaseEmailVerified = false;
+        let firebaseAuthenticated = false;
 
         if (!isAdminEmail && password) {
           try {
-            const cred = await signInWithEmailAndPassword(auth, cleanEmail, password);
+            const authPassword = password.length >= 6 ? password : `${password}__pg`;
+            const cred = await signInWithEmailAndPassword(auth, cleanEmail, authPassword);
             firebaseEmailVerified = cred.user.emailVerified;
+            firebaseAuthenticated = true;
           } catch (authErr: any) {
-            // If user doesn't exist in Firebase Email/Password auth or provider isn't enabled, continue profile lookup
             if (authErr?.code === 'auth/wrong-password') {
               return { success: false, error: 'Incorrect password. Please try again.' };
             }
@@ -381,27 +458,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         if (!found) {
-          found = {
-            name: cleanEmail.split('@')[0],
-            email: cleanEmail,
-            balance: 13000,
-            referralBalance: 0,
-            totalReferrals: 0,
-            accountLevel: 'Basic',
-            referralCode: cleanEmail.split('@')[0].toLowerCase(),
-            emailVerified: isAdminEmail || firebaseEmailVerified,
-            phoneVerified: isAdminEmail,
-          };
-          users.push(found);
-          localStorage.setItem('paygo_users', JSON.stringify(users));
-
-          try {
-            await setDoc(doc(db, 'users', cleanEmail), found, { merge: true });
-          } catch (err) {
-            console.warn('Cloud save fallback:', err);
+          if (isAdminEmail || firebaseAuthenticated) {
+            found = {
+              name: cleanEmail.split('@')[0],
+              email: cleanEmail,
+              balance: 13000,
+              referralBalance: 0,
+              totalReferrals: 0,
+              accountLevel: 'Basic',
+              referralCode: cleanEmail.split('@')[0].toLowerCase(),
+              emailVerified: isAdminEmail || firebaseEmailVerified,
+              phoneVerified: isAdminEmail,
+              authMethod: 'email',
+            };
+          } else {
+            return {
+              success: false,
+              error: 'No account found with this email address. Please create an account first.',
+            };
           }
         } else if (firebaseEmailVerified && !found.emailVerified) {
           found = { ...found, emailVerified: true };
+        }
+      }
+
+      // Verify saved credential hash (and backfill legacy accounts that didn't store passwordHash yet)
+      const enteredHash = await hashPassword(password, found.email.toLowerCase());
+      if (found.passwordHash) {
+        if (found.passwordHash !== enteredHash) {
+          return { success: false, error: 'Incorrect password. Please try again.' };
+        }
+      } else {
+        found = { ...found, passwordHash: enteredHash };
+        const idx = users.findIndex((u) => u.email.toLowerCase() === found!.email.toLowerCase());
+        if (idx !== -1) {
+          users[idx] = found;
+        } else {
+          users.push(found);
+        }
+        localStorage.setItem('paygo_users', JSON.stringify(users));
+        try {
+          await setDoc(
+            doc(db, 'users', found.email.toLowerCase()),
+            { passwordHash: enteredHash, updatedAt: new Date().toISOString() },
+            { merge: true }
+          );
+        } catch (err) {
+          console.warn('Cloud credential backfill fallback:', err);
         }
       }
 
@@ -423,6 +526,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         emailVerified: isAdminEmail ? true : Boolean(found.emailVerified),
         phoneVerified: isAdminEmail ? true : Boolean(found.phoneVerified),
         authMethod: resolvedAuthMethod,
+        passwordHash: found.passwordHash,
       };
 
       setUser(userData);
@@ -484,10 +588,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const isAdminEmail = cleanEmail === ADMIN_OWNER_EMAIL;
+      const users: User[] = JSON.parse(localStorage.getItem('paygo_users') || '[]');
+
+      // Check for duplicate existing account on this device or Firestore
+      if (!isAdminEmail) {
+        let existingUser = users.find(
+          (u) =>
+            u.email.toLowerCase() === cleanEmail ||
+            (method === 'phone' && normalizedPhone && u.phone && normalizePhone(u.phone) === normalizedPhone)
+        );
+        if (!existingUser) {
+          try {
+            const directDoc = await getDoc(doc(db, 'users', cleanEmail));
+            if (directDoc.exists()) {
+              existingUser = directDoc.data() as User;
+            } else if (method === 'phone' && normalizedPhone) {
+              const q = query(collection(db, 'users'), where('phone', '==', normalizedPhone));
+              const snaps = await getDocs(q);
+              if (!snaps.empty) {
+                existingUser = snaps.docs[0].data() as User;
+              }
+            }
+          } catch (dupErr) {
+            console.warn('Duplicate account check fallback:', dupErr);
+          }
+        }
+        if (existingUser && existingUser.passwordHash) {
+          return {
+            success: false,
+            error: 'An account with these details already exists. Please use Login instead.',
+          };
+        }
+      }
+
       let firebaseEmailVerified = isAdminEmail;
       let verificationNotice: string | undefined;
 
-      // For email sign-up (except admin), initialize Firebase Auth user (OTP verification occurs in VerificationGate)
+      // For email sign-up (except admin), initialize Firebase Auth user if enabled
       if (method === 'email' && !isAdminEmail) {
         try {
           const authPassword = password.length >= 6 ? password : `${password}__pg`;
@@ -509,6 +646,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const personalCode = trimmedName.toLowerCase().replace(/[^a-z0-9]/g, '') || cleanEmail.split('@')[0];
+      const passwordHash = await hashPassword(password, cleanEmail);
 
       const newUser: User = {
         name: trimmedName,
@@ -522,10 +660,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         emailVerified: isAdminEmail ? true : method === 'email' ? firebaseEmailVerified : false,
         phoneVerified: isAdminEmail ? true : false,
         authMethod: method,
+        passwordHash,
       };
 
-      // 1. Save to local storage for instantaneous responsiveness
-      const users: User[] = JSON.parse(localStorage.getItem('paygo_users') || '[]');
+      // 1. Save to local storage for instantaneous responsiveness & credential persistence
       const existingIdx = users.findIndex((u) => u.email.toLowerCase() === cleanEmail);
       if (existingIdx !== -1) {
         users[existingIdx] = newUser;
@@ -534,6 +672,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       localStorage.setItem('paygo_users', JSON.stringify(users));
       localStorage.setItem('paygo_current_user', cleanEmail);
+
+      // Save non-sensitive device login identifier so Login pre-fills automatically
+      if (method === 'phone' && normalizedPhone) {
+        const parts = splitPhoneParts(normalizedPhone);
+        saveRememberedLogin({
+          method: 'phone',
+          dialCode: parts.dialCode,
+          phoneDigits: parts.phoneDigits,
+        });
+      } else {
+        saveRememberedLogin({
+          method: 'email',
+          email: cleanEmail,
+        });
+      }
 
       const initialTx: Transaction = {
         id: `TXN-${Date.now()}`,
@@ -544,7 +697,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const initialTxs = [initialTx];
       localStorage.setItem(`paygo_transactions_${cleanEmail}`, JSON.stringify(initialTxs));
 
-      // 2. Persist to Firestore database so all devices have access
+      // 2. Persist to Firestore database so all devices can log in with the same details
       try {
         const firestorePayload = Object.fromEntries(
           Object.entries({
@@ -646,7 +799,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const users: User[] = JSON.parse(localStorage.getItem('paygo_users') || '[]');
       const idx = users.findIndex((u) => u.email.toLowerCase() === updatedUser.email.toLowerCase());
       if (idx !== -1) {
-        users[idx] = updatedUser;
+        users[idx] = { ...users[idx], ...updatedUser };
       } else {
         users.push(updatedUser);
       }

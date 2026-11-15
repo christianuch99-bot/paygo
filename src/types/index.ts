@@ -12,6 +12,7 @@ export interface User {
   emailVerified?: boolean;
   phoneVerified?: boolean;
   authMethod?: 'email' | 'phone';
+  passwordHash?: string;
 }
 
 export interface Transaction {

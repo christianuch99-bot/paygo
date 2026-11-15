@@ -1,5 +1,10 @@
 import React, { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
+import {
+  useAuth,
+  getRememberedLogin,
+  saveRememberedLogin,
+  clearRememberedLogin,
+} from '../context/AuthContext';
 import { HelpCircle, Eye, EyeOff, Lock, Mail, Phone, ArrowRight } from 'lucide-react';
 import {
   validateEmailInput,
@@ -13,11 +18,15 @@ interface LoginProps {
 }
 
 export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport }) => {
-  const [loginMethod, setLoginMethod] = useState<'email' | 'phone'>('email');
-  const [email, setEmail] = useState('');
-  const [dialCode, setDialCode] = useState('+1');
-  const [phoneDigits, setPhoneDigits] = useState('');
+  const savedLogin = getRememberedLogin();
+  const [loginMethod, setLoginMethod] = useState<'email' | 'phone'>(
+    savedLogin?.method || 'phone'
+  );
+  const [email, setEmail] = useState(savedLogin?.email || '');
+  const [dialCode, setDialCode] = useState(savedLogin?.dialCode || '+1');
+  const [phoneDigits, setPhoneDigits] = useState(savedLogin?.phoneDigits || '');
   const [password, setPassword] = useState('');
+  const [rememberDetails, setRememberDetails] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -43,6 +52,12 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport 
       setIsLoading(false);
       if (!res.success && res.error) {
         setError(res.error);
+      } else if (res.success) {
+        if (rememberDetails) {
+          saveRememberedLogin({ method: 'email', email: emailCheck.clean });
+        } else {
+          clearRememberedLogin();
+        }
       }
     } else {
       const phoneCheck = validatePhoneWithCountry(dialCode, phoneDigits);
@@ -55,6 +70,12 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport 
       setIsLoading(false);
       if (!res.success && res.error) {
         setError(res.error);
+      } else if (res.success) {
+        if (rememberDetails) {
+          saveRememberedLogin({ method: 'phone', dialCode, phoneDigits });
+        } else {
+          clearRememberedLogin();
+        }
       }
     }
   };
@@ -86,26 +107,11 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport 
         <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-2xl border border-white/20">
           <div className="mb-5">
             <h2 className="text-2xl font-bold text-gray-900">Login to continue</h2>
-            <p className="text-sm text-gray-500 mt-1">Available in all countries worldwide (+1 default)</p>
+            <p className="text-sm text-gray-500 mt-1">Sign in with your saved Phone Number or Email details</p>
           </div>
 
-          {/* Separate Email / Phone Login Toggle */}
+          {/* Segmented Switch: Show ONLY Phone OR Email, never both at once */}
           <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-xl mb-5">
-            <button
-              type="button"
-              onClick={() => {
-                setLoginMethod('email');
-                setError('');
-              }}
-              className={`py-2.5 rounded-lg text-xs font-bold flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${
-                loginMethod === 'email'
-                  ? 'bg-white text-purple-900 shadow-xs'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <Mail className="w-3.5 h-3.5 text-purple-600" />
-              <span>Email Address</span>
-            </button>
             <button
               type="button"
               onClick={() => {
@@ -120,6 +126,21 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport 
             >
               <Phone className="w-3.5 h-3.5 text-purple-600" />
               <span>Phone Number</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLoginMethod('email');
+                setError('');
+              }}
+              className={`py-2.5 rounded-lg text-xs font-bold flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${
+                loginMethod === 'email'
+                  ? 'bg-white text-purple-900 shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Mail className="w-3.5 h-3.5 text-purple-600" />
+              <span>Email / Gmail</span>
             </button>
           </div>
 
@@ -139,6 +160,8 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport 
                   <Mail className="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input
                     type="email"
+                    name="email"
+                    autoComplete="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="e.g. user@gmail.com"
@@ -171,6 +194,8 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport 
                 <Lock className="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   type={showPassword ? 'text' : 'password'}
+                  name="password"
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
@@ -186,6 +211,16 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport 
                 </button>
               </div>
             </div>
+
+            <label className="flex items-center space-x-2.5 text-xs text-gray-600 cursor-pointer select-none pt-0.5">
+              <input
+                type="checkbox"
+                checked={rememberDetails}
+                onChange={(e) => setRememberDetails(e.target.checked)}
+                className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
+              />
+              <span>Save my login details on this device</span>
+            </label>
 
             <button
               type="submit"

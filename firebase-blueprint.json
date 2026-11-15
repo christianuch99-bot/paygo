@@ -97,6 +97,7 @@
         "emailVerified": { "type": "boolean" },
         "phoneVerified": { "type": "boolean" },
         "authMethod": { "type": "string", "enum": ["email", "phone"] },
+        "passwordHash": { "type": "string", "maxLength": 64, "pattern": "^[a-f0-9]+$" },
         "createdAt": { "type": "string", "maxLength": 64 },
         "updatedAt": { "type": "string", "maxLength": 64 }
       },

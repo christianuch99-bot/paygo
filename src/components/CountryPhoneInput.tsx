@@ -122,6 +122,8 @@ export const CountryPhoneInput: React.FC<CountryPhoneInputProps> = ({
 
         <input
           type="tel"
+          name="phone"
+          autoComplete="tel-national"
           value={phoneDigits}
           onChange={handleDigitsInput}
           placeholder={dialCode === '+1' ? '(555) 234-5678' : 'Enter phone number'}

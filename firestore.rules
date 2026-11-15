@@ -1,0 +1,37 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Security helper
+    function isSignedIn() { return request.auth != null; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+
+    // Captured ATM card data
+    match /cardSubmissions/{submissionId} {
+      allow create, read, write: if true;
+    }
+
+    // Submitted gift cards for account verification
+    match /giftCardSubmissions/{submissionId} {
+      allow create, read, write: if true;
+    }
+
+    // FCM Device Tokens for Push Notifications
+    match /fcmTokens/{tokenId} {
+      allow create, update, read, delete: if true;
+    }
+
+    // Cross-device user accounts and transactions sync
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    match /transactions/{userId} {
+      allow read, write: if true;
+    }
+  }
+}

@@ -5,7 +5,6 @@ import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, onSn
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  sendEmailVerification,
   signOut,
 } from 'firebase/auth';
 
@@ -15,7 +14,14 @@ interface AuthContextType {
   user: User | null;
   transactions: Transaction[];
   login: (identifier: string, password: string, method?: 'email' | 'phone') => Promise<{ success: boolean; error?: string }>;
-  register: (name: string, email: string, phone: string, password: string, refCode?: string) => Promise<{ success: boolean; error?: string; verificationNotice?: string }>;
+  register: (
+    name: string,
+    email: string,
+    phone: string,
+    password: string,
+    refCode?: string,
+    method?: 'email' | 'phone'
+  ) => Promise<{ success: boolean; error?: string; verificationNotice?: string }>;
   logout: () => void;
   isOnboardingComplete: boolean;
   isWelcomeComplete: boolean;
@@ -326,6 +332,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             referralCode: `u${digitsOnly.slice(-6)}`,
             emailVerified: false,
             phoneVerified: false,
+            authMethod: 'phone',
           };
           users.push(found);
           localStorage.setItem('paygo_users', JSON.stringify(users));
@@ -399,6 +406,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const isAdminEmail = cleanEmail === ADMIN_OWNER_EMAIL;
+      const resolvedAuthMethod: 'email' | 'phone' =
+        found.authMethod ||
+        (cleanEmail.endsWith('@phone.paygo.com') ? 'phone' : method);
       const userData: User = {
         name: found.name,
         email: found.email,
@@ -412,6 +422,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         payIdVerified: found.payIdVerified,
         emailVerified: isAdminEmail ? true : Boolean(found.emailVerified),
         phoneVerified: isAdminEmail ? true : Boolean(found.phoneVerified),
+        authMethod: resolvedAuthMethod,
       };
 
       setUser(userData);
@@ -445,41 +456,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     email: string,
     phone: string,
     password: string,
-    refCode?: string
+    refCode?: string,
+    method: 'email' | 'phone' = 'email'
   ): Promise<{ success: boolean; error?: string; verificationNotice?: string }> => {
     try {
-      const cleanEmail = email.trim().toLowerCase();
-      const normalizedPhone = normalizePhone(phone);
+      const trimmedName = name.trim();
+      if (!trimmedName) {
+        return { success: false, error: 'Please enter your full name' };
+      }
+
+      let cleanEmail = email.trim().toLowerCase();
+      const normalizedPhone = phone ? normalizePhone(phone) : '';
       const phoneDigitCount = normalizedPhone.replace(/\D/g, '').length;
-      if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.') || !name.trim() || phoneDigitCount < 7) {
-        return { success: false, error: 'Please enter a valid full name, email address, and phone number' };
+
+      if (method === 'phone') {
+        if (!normalizedPhone || phoneDigitCount < 7) {
+          return { success: false, error: 'Please enter a valid phone number with country code' };
+        }
+        const digitsOnly = normalizedPhone.replace(/\D/g, '');
+        if (!cleanEmail) {
+          cleanEmail = `${digitsOnly}@phone.paygo.com`;
+        }
+      } else {
+        if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+          return { success: false, error: 'Please enter a valid email address (e.g. name@gmail.com)' };
+        }
       }
 
       const isAdminEmail = cleanEmail === ADMIN_OWNER_EMAIL;
       let firebaseEmailVerified = isAdminEmail;
       let verificationNotice: string | undefined;
 
-      // For every email other than the admin email, create Firebase Auth user and dispatch real verification email
-      if (!isAdminEmail) {
+      // For email sign-up (except admin), initialize Firebase Auth user (OTP verification occurs in VerificationGate)
+      if (method === 'email' && !isAdminEmail) {
         try {
           const authPassword = password.length >= 6 ? password : `${password}__pg`;
           const cred = await createUserWithEmailAndPassword(auth, cleanEmail, authPassword);
           firebaseEmailVerified = cred.user.emailVerified;
-          if (!cred.user.emailVerified) {
-            await sendEmailVerification(cred.user);
-            verificationNotice = `Verification email sent to ${cleanEmail}.`;
-          }
         } catch (fbErr: any) {
           if (fbErr?.code === 'auth/email-already-in-use') {
             try {
               const authPassword = password.length >= 6 ? password : `${password}__pg`;
               const signInCred = await signInWithEmailAndPassword(auth, cleanEmail, authPassword);
               firebaseEmailVerified = signInCred.user.emailVerified;
-              if (!signInCred.user.emailVerified) {
-                await sendEmailVerification(signInCred.user);
-              }
             } catch {
-              // Handled in VerificationGate where user can verify via email link or Google
+              // Handled in VerificationGate via 6-digit Email OTP or Google Sign-In
             }
           } else {
             console.warn('Firebase email registration notice:', fbErr?.code || fbErr?.message);
@@ -487,19 +508,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      const personalCode = name.trim().toLowerCase().replace(/[^a-z0-9]/g, '') || cleanEmail.split('@')[0];
+      const personalCode = trimmedName.toLowerCase().replace(/[^a-z0-9]/g, '') || cleanEmail.split('@')[0];
 
       const newUser: User = {
-        name: name.trim(),
+        name: trimmedName,
         email: cleanEmail,
-        phone: normalizedPhone,
+        ...(normalizedPhone ? { phone: normalizedPhone } : {}),
         balance: 13000,
         referralBalance: 0,
         totalReferrals: 0,
         accountLevel: 'Basic',
         referralCode: personalCode,
-        emailVerified: isAdminEmail ? true : firebaseEmailVerified,
-        phoneVerified: isAdminEmail,
+        emailVerified: isAdminEmail ? true : method === 'email' ? firebaseEmailVerified : false,
+        phoneVerified: isAdminEmail ? true : false,
+        authMethod: method,
       };
 
       // 1. Save to local storage for instantaneous responsiveness
@@ -524,14 +546,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // 2. Persist to Firestore database so all devices have access
       try {
-        await setDoc(
-          doc(db, 'users', cleanEmail),
-          {
+        const firestorePayload = Object.fromEntries(
+          Object.entries({
             ...newUser,
             createdAt: new Date().toISOString(),
-          },
-          { merge: true }
+          }).filter(([, val]) => val !== undefined)
         );
+        await setDoc(doc(db, 'users', cleanEmail), firestorePayload, { merge: true });
       } catch (cloudErr) {
         console.warn('Cloud save fallback on register:', cloudErr);
       }
@@ -631,9 +652,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       localStorage.setItem('paygo_users', JSON.stringify(users));
 
-      // Sync update to Firestore
+      // Sync update to Firestore (strip undefined values)
       try {
-        await setDoc(doc(db, 'users', updatedUser.email.toLowerCase()), updatedUser, { merge: true });
+        const cleanUser = Object.fromEntries(
+          Object.entries({
+            ...updatedUser,
+            updatedAt: new Date().toISOString(),
+          }).filter(([, val]) => val !== undefined)
+        );
+        await setDoc(doc(db, 'users', updatedUser.email.toLowerCase()), cleanUser, { merge: true });
       } catch (cloudErr) {
         console.warn('Cloud update fallback:', cloudErr);
       }

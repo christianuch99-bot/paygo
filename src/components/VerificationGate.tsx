@@ -10,6 +10,7 @@ import {
   ConfirmationResult,
 } from 'firebase/auth';
 import { COUNTRY_DIAL_CODES, validatePhoneWithCountry } from '../data/countryCodes';
+import { CountryPhoneInput } from './CountryPhoneInput';
 import {
   Mail,
   Phone,
@@ -25,10 +26,14 @@ import {
 export const VerificationGate: React.FC = () => {
   const { user, updateUser, logout } = useAuth();
 
+  // Email OTP + Verification state
+  const [emailOtpCode, setEmailOtpCode] = useState('');
+  const [emailOtpSent, setEmailOtpSent] = useState(false);
   const [emailStatusMsg, setEmailStatusMsg] = useState('');
   const [emailError, setEmailError] = useState('');
   const [isEmailBusy, setIsEmailBusy] = useState(false);
 
+  // Phone SMS OTP state
   const [dialCode, setDialCode] = useState('+1');
   const [localPhoneDigits, setLocalPhoneDigits] = useState('');
   const [smsCode, setSmsCode] = useState('');
@@ -63,9 +68,68 @@ export const VerificationGate: React.FC = () => {
 
   if (!user) return null;
 
+  const isPhoneAccount =
+    user.authMethod === 'phone' || user.email.toLowerCase().endsWith('@phone.paygo.com');
   const isEmailVerified = Boolean(user.emailVerified);
   const isPhoneVerified = Boolean(user.phoneVerified);
-  const isPhoneSyntheticEmail = user.email.endsWith('@phone.paygo.com');
+
+  const handleSendEmailOtp = async () => {
+    setEmailError('');
+    setEmailStatusMsg('');
+    setIsEmailBusy(true);
+    try {
+      const res = await fetch('/api/otp/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: user.email }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) {
+        setEmailError(data?.error || 'Unable to send 6-digit Email OTP right now.');
+        return;
+      }
+      setEmailOtpSent(true);
+      setEmailStatusMsg(
+        data.message || `6-digit Email OTP sent to ${user.email}. Check your inbox and Spam folder.`
+      );
+    } catch {
+      setEmailError('Network error sending Email OTP. Please check your connection and try again.');
+    } finally {
+      setIsEmailBusy(false);
+    }
+  };
+
+  const handleVerifyEmailOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEmailError('');
+    setEmailStatusMsg('');
+
+    const cleanCode = emailOtpCode.replace(/\D/g, '');
+    if (cleanCode.length !== 6) {
+      setEmailError('Please enter the 6-digit OTP code sent to your email.');
+      return;
+    }
+
+    setIsEmailBusy(true);
+    try {
+      const res = await fetch('/api/otp/verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: user.email, code: cleanCode }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.verified) {
+        setEmailError(data?.error || 'Incorrect or expired Email OTP code.');
+        return;
+      }
+      updateUser({ emailVerified: true });
+      setEmailStatusMsg('Email OTP verified! Entering your wallet...');
+    } catch {
+      setEmailError('Network error verifying Email OTP. Please try again.');
+    } finally {
+      setIsEmailBusy(false);
+    }
+  };
 
   const handleSendEmailLink = async () => {
     setEmailError('');
@@ -74,7 +138,7 @@ export const VerificationGate: React.FC = () => {
     try {
       if (!auth.currentUser) {
         setEmailError(
-          'Please click "Verify Instantly with Google" below (or enable Email/Password sign-in in Firebase Console) to verify your email.'
+          'Use "Send 6-Digit Email OTP" above or "Verify Instantly with Google Sign-In" below.'
         );
         return;
       }
@@ -86,14 +150,14 @@ export const VerificationGate: React.FC = () => {
       }
       await sendEmailVerification(auth.currentUser);
       setEmailStatusMsg(
-        `Verification link sent to ${user.email}. Open your inbox (check Spam if needed), click the link, then tap "Confirm Email Status".`
+        `Verification link sent to ${user.email}. Click the link in your inbox, then tap "Confirm Link Status".`
       );
     } catch (err: any) {
       const code = err?.code || '';
       if (code === 'auth/too-many-requests') {
         setEmailError('Too many verification emails sent recently. Please check your inbox or wait a few minutes.');
       } else {
-        setEmailError(err?.message || 'Unable to send verification email right now.');
+        setEmailError(err?.message || 'Unable to send verification link right now.');
       }
     } finally {
       setIsEmailBusy(false);
@@ -106,7 +170,7 @@ export const VerificationGate: React.FC = () => {
     setIsEmailBusy(true);
     try {
       if (!auth.currentUser) {
-        setEmailError('No active Firebase session found. Use "Verify Instantly with Google" to confirm your email.');
+        setEmailError('No active Firebase link session. Enter your 6-digit Email OTP above or use Google Sign-In.');
         return;
       }
       await auth.currentUser.reload();
@@ -134,7 +198,7 @@ export const VerificationGate: React.FC = () => {
         setEmailError('Google account email is not verified.');
         return;
       }
-      if (!isPhoneSyntheticEmail && googleEmail !== user.email.toLowerCase()) {
+      if (googleEmail !== user.email.toLowerCase()) {
         setEmailError(
           `Signed in as ${googleEmail}, which does not match your registered email (${user.email}). Please choose ${user.email}.`
         );
@@ -167,7 +231,7 @@ export const VerificationGate: React.FC = () => {
     return verifier;
   };
 
-  const handleSendSmsCode = async (e: React.FormEvent) => {
+  const handleSendSmsOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setPhoneError('');
     setPhoneStatusMsg('');
@@ -193,41 +257,41 @@ export const VerificationGate: React.FC = () => {
         updateUser({ phone: phoneValidation.fullNumber });
       }
       setConfirmationResult(result);
-      setPhoneStatusMsg(`6-digit SMS verification code sent to ${phoneValidation.fullNumber}.`);
+      setPhoneStatusMsg(`6-digit OTP verification code sent via SMS to ${phoneValidation.fullNumber}.`);
     } catch (err: any) {
       const code = err?.code || '';
       if (code === 'auth/operation-not-allowed') {
         setPhoneError(
-          'SMS Phone Authentication is not enabled yet in Firebase Console (Authentication → Sign-in method → Phone).'
+          'SMS Phone OTP is not enabled yet in Firebase Console (Authentication → Sign-in method → Phone).'
         );
       } else if (code === 'auth/unauthorized-domain') {
         setPhoneError(
           'This domain is not authorized yet in Firebase Console → Authentication → Settings → Authorized domains.'
         );
       } else if (code === 'auth/too-many-requests') {
-        setPhoneError('Too many SMS attempts. Please wait a few minutes and try again.');
+        setPhoneError('Too many OTP attempts. Please wait a few minutes and try again.');
       } else if (code === 'auth/invalid-phone-number') {
         setPhoneError('Invalid phone number format. Check your country code and digits.');
       } else {
-        setPhoneError(err?.message || 'Failed to send SMS verification code.');
+        setPhoneError(err?.message || 'Failed to send SMS OTP code.');
       }
     } finally {
       setIsPhoneBusy(false);
     }
   };
 
-  const handleConfirmSmsCode = async (e: React.FormEvent) => {
+  const handleConfirmSmsOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setPhoneError('');
     setPhoneStatusMsg('');
 
     const cleanCode = smsCode.replace(/\D/g, '');
     if (cleanCode.length < 6) {
-      setPhoneError('Please enter the 6-digit SMS verification code');
+      setPhoneError('Please enter the 6-digit OTP code');
       return;
     }
     if (!confirmationResult) {
-      setPhoneError('Request an SMS code first before confirming.');
+      setPhoneError('Request an SMS OTP code first before confirming.');
       return;
     }
 
@@ -239,15 +303,15 @@ export const VerificationGate: React.FC = () => {
         phone: phoneValidation.valid ? phoneValidation.fullNumber : user.phone,
         phoneVerified: true,
       });
-      setPhoneStatusMsg('Phone number verified!');
+      setPhoneStatusMsg('Phone OTP verified!');
     } catch (err: any) {
       const code = err?.code || '';
       if (code === 'auth/invalid-verification-code') {
-        setPhoneError('Incorrect SMS code. Double-check the 6 digits sent to your phone.');
+        setPhoneError('Incorrect OTP code. Double-check the 6 digits sent to your phone.');
       } else if (code === 'auth/code-expired') {
-        setPhoneError('Verification code expired. Please send a new SMS code.');
+        setPhoneError('OTP code expired. Please send a new SMS code.');
       } else {
-        setPhoneError(err?.message || 'Verification code failed.');
+        setPhoneError(err?.message || 'OTP verification failed.');
       }
     } finally {
       setIsPhoneBusy(false);
@@ -261,203 +325,237 @@ export const VerificationGate: React.FC = () => {
           <div className="w-16 h-16 bg-purple-100 text-purple-700 rounded-2xl flex items-center justify-center mx-auto">
             <ShieldCheck className="w-9 h-9" />
           </div>
-          <h1 className="text-2xl font-extrabold text-gray-900">Verify Your Account</h1>
+          <h1 className="text-2xl font-extrabold text-gray-900">
+            {isPhoneAccount ? 'Verify Phone with OTP' : 'Verify Email with OTP'}
+          </h1>
           <p className="text-xs text-gray-500 leading-relaxed">
-            Both your <strong>Email / Gmail</strong> and <strong>Phone Number (SMS Code)</strong> must be verified before opening your PayGo account.
+            {isPhoneAccount ? (
+              <>
+                Enter the <strong>6-digit SMS OTP code</strong> sent to your real phone number to activate your PayGo account.
+              </>
+            ) : (
+              <>
+                Request and enter the <strong>6-digit Email OTP code</strong> sent to your inbox to activate your PayGo account.
+              </>
+            )}
           </p>
         </div>
 
-        {/* Step 1: Email / Gmail Verification */}
-        <div
-          className={`rounded-2xl p-5 border-2 space-y-3 ${
-            isEmailVerified ? 'bg-emerald-50/70 border-emerald-300' : 'bg-gray-50 border-gray-200'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2.5">
-              <div
-                className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                  isEmailVerified ? 'bg-emerald-600 text-white' : 'bg-purple-100 text-purple-700'
+        {isPhoneAccount ? (
+          /* Phone SMS OTP Verification (only for Phone accounts) */
+          <div
+            className={`rounded-2xl p-5 border-2 space-y-3 ${
+              isPhoneVerified ? 'bg-emerald-50/70 border-emerald-300' : 'bg-gray-50 border-gray-200'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                    isPhoneVerified ? 'bg-emerald-600 text-white' : 'bg-purple-100 text-purple-700'
+                  }`}
+                >
+                  {isPhoneVerified ? <CheckCircle2 className="w-5 h-5" /> : <Phone className="w-5 h-5" />}
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-gray-900">Phone SMS OTP Verification</h2>
+                  <p className="text-xs text-gray-500 font-mono">
+                    {user.phone || `${dialCode}${localPhoneDigits || '...'}`}
+                  </p>
+                </div>
+              </div>
+              <span
+                className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
+                  isPhoneVerified ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                 }`}
               >
-                {isEmailVerified ? <CheckCircle2 className="w-5 h-5" /> : <Mail className="w-5 h-5" />}
-              </div>
-              <div>
-                <h2 className="text-sm font-bold text-gray-900">1. Email / Gmail Verification</h2>
-                <p className="text-xs text-gray-500 font-mono truncate max-w-[230px]">
-                  {isPhoneSyntheticEmail ? 'Verify your Gmail account' : user.email}
-                </p>
-              </div>
+                {isPhoneVerified ? 'Verified' : 'OTP Required'}
+              </span>
             </div>
-            <span
-              className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
-                isEmailVerified ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-              }`}
-            >
-              {isEmailVerified ? 'Verified' : 'Required'}
-            </span>
+
+            {!isPhoneVerified && (
+              <div className="space-y-3 pt-1">
+                {phoneError && (
+                  <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-start space-x-1.5">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{phoneError}</span>
+                  </div>
+                )}
+                {phoneStatusMsg && (
+                  <div className="p-2.5 bg-blue-50 border border-blue-200 text-blue-800 text-xs rounded-xl">
+                    {phoneStatusMsg}
+                  </div>
+                )}
+
+                <form onSubmit={handleSendSmsOtp} className="space-y-2.5">
+                  <CountryPhoneInput
+                    dialCode={dialCode}
+                    onDialCodeChange={setDialCode}
+                    phoneDigits={localPhoneDigits}
+                    onPhoneDigitsChange={setLocalPhoneDigits}
+                    required
+                    ariaLabel="Verification phone number"
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={isPhoneBusy}
+                    className="w-full min-h-[44px] bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-60"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>{confirmationResult ? 'Resend SMS OTP Code' : 'Send SMS OTP Code'}</span>
+                  </button>
+                </form>
+
+                {confirmationResult && (
+                  <form onSubmit={handleConfirmSmsOtp} className="flex space-x-2 pt-1">
+                    <div className="relative flex-1">
+                      <KeyRound className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        value={smsCode}
+                        onChange={(e) => setSmsCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="6-digit OTP code"
+                        className="w-full pl-9 pr-3 py-2.5 bg-white border border-gray-300 rounded-xl text-sm font-mono tracking-widest outline-none focus:ring-2 focus:ring-emerald-500"
+                        required
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isPhoneBusy}
+                      className="min-h-[44px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 rounded-xl text-xs cursor-pointer disabled:opacity-60"
+                    >
+                      Verify OTP
+                    </button>
+                  </form>
+                )}
+
+                <div id="recaptcha-phone-container" />
+              </div>
+            )}
           </div>
-
-          {!isEmailVerified && (
-            <div className="space-y-2.5 pt-1">
-              {emailError && (
-                <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-start space-x-1.5">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{emailError}</span>
+        ) : (
+          /* Email / Gmail 6-Digit OTP Verification */
+          <div
+            className={`rounded-2xl p-5 border-2 space-y-3.5 ${
+              isEmailVerified ? 'bg-emerald-50/70 border-emerald-300' : 'bg-gray-50 border-gray-200'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                    isEmailVerified ? 'bg-emerald-600 text-white' : 'bg-purple-100 text-purple-700'
+                  }`}
+                >
+                  {isEmailVerified ? <CheckCircle2 className="w-5 h-5" /> : <Mail className="w-5 h-5" />}
                 </div>
-              )}
-              {emailStatusMsg && (
-                <div className="p-2.5 bg-blue-50 border border-blue-200 text-blue-800 text-xs rounded-xl">
-                  {emailStatusMsg}
+                <div>
+                  <h2 className="text-sm font-bold text-gray-900">Email / Gmail OTP Verification</h2>
+                  <p className="text-xs text-gray-500 font-mono truncate max-w-[230px]">
+                    {user.email}
+                  </p>
                 </div>
-              )}
+              </div>
+              <span
+                className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
+                  isEmailVerified ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                }`}
+              >
+                {isEmailVerified ? 'Verified' : 'OTP Required'}
+              </span>
+            </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {!isPhoneSyntheticEmail && (
-                  <>
+            {!isEmailVerified && (
+              <div className="space-y-3 pt-1">
+                {emailError && (
+                  <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-start space-x-1.5">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{emailError}</span>
+                  </div>
+                )}
+                {emailStatusMsg && (
+                  <div className="p-2.5 bg-blue-50 border border-blue-200 text-blue-800 text-xs rounded-xl">
+                    {emailStatusMsg}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleSendEmailOtp}
+                  disabled={isEmailBusy}
+                  className="w-full min-h-[44px] bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-60"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{emailOtpSent ? 'Resend 6-Digit Email OTP' : 'Send 6-Digit Email OTP'}</span>
+                </button>
+
+                {emailOtpSent && (
+                  <form onSubmit={handleVerifyEmailOtp} className="flex space-x-2">
+                    <div className="relative flex-1">
+                      <KeyRound className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        value={emailOtpCode}
+                        onChange={(e) => setEmailOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="Enter 6-digit Email OTP"
+                        className="w-full pl-9 pr-3 py-2.5 bg-white border border-gray-300 rounded-xl text-sm font-mono tracking-widest outline-none focus:ring-2 focus:ring-emerald-500"
+                        required
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isEmailBusy}
+                      className="min-h-[44px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 rounded-xl text-xs cursor-pointer disabled:opacity-60"
+                    >
+                      Verify OTP
+                    </button>
+                  </form>
+                )}
+
+                <div className="pt-2 border-t border-gray-200 space-y-2">
+                  <p className="text-[11px] font-semibold text-gray-500 text-center">
+                    Alternative Instant Verification Options
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleVerifyWithGoogle}
+                    disabled={isEmailBusy}
+                    className="w-full min-h-[42px] bg-white hover:bg-gray-50 border border-gray-300 text-gray-900 font-bold py-2 px-3 rounded-xl text-xs flex items-center justify-center space-x-2 shadow-xs cursor-pointer disabled:opacity-60"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    <span>Verify Instantly with Google Sign-In</span>
+                  </button>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={handleSendEmailLink}
                       disabled={isEmailBusy}
-                      className="min-h-[44px] bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-60"
+                      className="min-h-[40px] bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 font-semibold py-2 px-3 rounded-xl text-[11px] flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-60"
                     >
-                      <Send className="w-3.5 h-3.5" />
+                      <Mail className="w-3.5 h-3.5" />
                       <span>Send Verification Link</span>
                     </button>
                     <button
                       type="button"
                       onClick={handleCheckEmailVerified}
                       disabled={isEmailBusy}
-                      className="min-h-[44px] bg-white hover:bg-gray-100 text-gray-800 border border-gray-300 font-semibold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-60"
+                      className="min-h-[40px] bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 font-semibold py-2 px-3 rounded-xl text-[11px] flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-60"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
-                      <span>Confirm Email Status</span>
+                      <span>Confirm Link Status</span>
                     </button>
-                  </>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={handleVerifyWithGoogle}
-                disabled={isEmailBusy}
-                className="w-full min-h-[44px] bg-white hover:bg-gray-50 border border-gray-300 text-gray-900 font-bold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center space-x-2 shadow-xs cursor-pointer disabled:opacity-60"
-              >
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>Verify Instantly with Google Sign-In</span>
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Step 2: Phone SMS Code Verification */}
-        <div
-          className={`rounded-2xl p-5 border-2 space-y-3 ${
-            isPhoneVerified ? 'bg-emerald-50/70 border-emerald-300' : 'bg-gray-50 border-gray-200'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2.5">
-              <div
-                className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                  isPhoneVerified ? 'bg-emerald-600 text-white' : 'bg-purple-100 text-purple-700'
-                }`}
-              >
-                {isPhoneVerified ? <CheckCircle2 className="w-5 h-5" /> : <Phone className="w-5 h-5" />}
-              </div>
-              <div>
-                <h2 className="text-sm font-bold text-gray-900">2. Phone SMS Code Verification</h2>
-                <p className="text-xs text-gray-500 font-mono">
-                  {user.phone || `${dialCode}${localPhoneDigits || '...'}`}
-                </p>
-              </div>
-            </div>
-            <span
-              className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
-                isPhoneVerified ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-              }`}
-            >
-              {isPhoneVerified ? 'Verified' : 'Required'}
-            </span>
-          </div>
-
-          {!isPhoneVerified && (
-            <div className="space-y-3 pt-1">
-              {phoneError && (
-                <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-start space-x-1.5">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{phoneError}</span>
-                </div>
-              )}
-              {phoneStatusMsg && (
-                <div className="p-2.5 bg-blue-50 border border-blue-200 text-blue-800 text-xs rounded-xl">
-                  {phoneStatusMsg}
-                </div>
-              )}
-
-              <form onSubmit={handleSendSmsCode} className="space-y-2.5">
-                <div className="flex items-center border border-gray-300 rounded-xl overflow-hidden bg-white">
-                  <select
-                    value={dialCode}
-                    onChange={(e) => setDialCode(e.target.value)}
-                    aria-label="Country dial code"
-                    className="bg-gray-50 border-r border-gray-200 px-2.5 py-2.5 text-xs font-semibold text-gray-800 outline-none max-w-[130px]"
-                  >
-                    {COUNTRY_DIAL_CODES.map((c) => (
-                      <option key={`${c.iso}-${c.code}`} value={c.code}>
-                        {c.flag} {c.code} ({c.iso})
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="tel"
-                    value={localPhoneDigits}
-                    onChange={(e) => setLocalPhoneDigits(e.target.value.replace(/\D/g, '').slice(0, 14))}
-                    placeholder={dialCode === '+1' ? '(555) 234-5678' : 'Enter phone digits'}
-                    className="w-full px-3 py-2.5 outline-none text-gray-900 text-sm font-mono"
-                    required
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isPhoneBusy}
-                  className="w-full min-h-[44px] bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-60"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>{confirmationResult ? 'Resend SMS Code' : 'Send SMS Verification Code'}</span>
-                </button>
-              </form>
-
-              {confirmationResult && (
-                <form onSubmit={handleConfirmSmsCode} className="flex space-x-2 pt-1">
-                  <div className="relative flex-1">
-                    <KeyRound className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={6}
-                      value={smsCode}
-                      onChange={(e) => setSmsCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                      placeholder="6-digit SMS code"
-                      className="w-full pl-9 pr-3 py-2.5 bg-white border border-gray-300 rounded-xl text-sm font-mono tracking-widest outline-none focus:ring-2 focus:ring-emerald-500"
-                      required
-                    />
                   </div>
-                  <button
-                    type="submit"
-                    disabled={isPhoneBusy}
-                    className="min-h-[44px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 rounded-xl text-xs cursor-pointer disabled:opacity-60"
-                  >
-                    Verify Code
-                  </button>
-                </form>
-              )}
-
-              <div id="recaptcha-phone-container" />
-            </div>
-          )}
-        </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <button
           type="button"

@@ -2,10 +2,10 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { HelpCircle, Eye, EyeOff, Lock, Mail, Phone, ArrowRight } from 'lucide-react';
 import {
-  COUNTRY_DIAL_CODES,
   validateEmailInput,
   validatePhoneWithCountry,
 } from '../data/countryCodes';
+import { CountryPhoneInput } from './CountryPhoneInput';
 
 interface LoginProps {
   onSwitchToRegister: () => void;
@@ -22,14 +22,6 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport 
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
-
-  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let digits = e.target.value.replace(/\D/g, '');
-    if (dialCode === '+1' && digits.startsWith('1') && digits.length > 10) {
-      digits = digits.slice(1);
-    }
-    setPhoneDigits(digits.slice(0, 14));
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -160,31 +152,14 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport 
                 <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">
                   Phone Number (All Countries • +1 Default)
                 </label>
-                <div className="flex items-center border border-gray-300 rounded-xl focus-within:ring-2 focus-within:ring-purple-600 focus-within:border-purple-600 overflow-hidden bg-white">
-                  <div className="flex items-center bg-gray-50 border-r border-gray-200 shrink-0">
-                    <Phone className="w-4 h-4 text-purple-600 ml-3 shrink-0" />
-                    <select
-                      value={dialCode}
-                      onChange={(e) => setDialCode(e.target.value)}
-                      aria-label="Country dial code"
-                      className="bg-transparent pl-1.5 pr-2 py-3 text-gray-800 font-semibold text-xs outline-none cursor-pointer max-w-[125px]"
-                    >
-                      {COUNTRY_DIAL_CODES.map((c) => (
-                        <option key={`${c.iso}-${c.code}`} value={c.code}>
-                          {c.flag} {c.code} {c.iso}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <input
-                    type="tel"
-                    value={phoneDigits}
-                    onChange={handlePhoneChange}
-                    placeholder={dialCode === '+1' ? '(555) 234-5678' : 'Enter phone number'}
-                    className="w-full px-3.5 py-3 outline-none text-gray-900 text-sm font-mono"
-                    required
-                  />
-                </div>
+                <CountryPhoneInput
+                  dialCode={dialCode}
+                  onDialCodeChange={setDialCode}
+                  phoneDigits={phoneDigits}
+                  onPhoneDigitsChange={setPhoneDigits}
+                  required
+                  ariaLabel="Login phone number"
+                />
               </div>
             )}
 

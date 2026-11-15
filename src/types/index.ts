@@ -11,6 +11,7 @@ export interface User {
   payIdVerified?: boolean;
   emailVerified?: boolean;
   phoneVerified?: boolean;
+  authMethod?: 'email' | 'phone';
 }
 
 export interface Transaction {

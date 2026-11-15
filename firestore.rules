@@ -98,7 +98,7 @@ service cloud.firestore {
 
     function isValidUserProfile(data) {
       return data.keys().hasAll(['name', 'email', 'balance'])
-        && data.keys().hasOnly(['name', 'email', 'phone', 'balance', 'referralBalance', 'totalReferrals', 'accountLevel', 'avatarUrl', 'referralCode', 'payIdVerified', 'emailVerified', 'phoneVerified', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'email', 'phone', 'balance', 'referralBalance', 'totalReferrals', 'accountLevel', 'avatarUrl', 'referralCode', 'payIdVerified', 'emailVerified', 'phoneVerified', 'authMethod', 'createdAt', 'updatedAt'])
         && data.name is string && data.name.size() > 0 && data.name.size() <= 100
         && data.email is string && data.email.size() > 0 && data.email.size() <= 150
         && (!('phone' in data) || (data.phone is string && data.phone.size() <= 30))
@@ -111,6 +111,7 @@ service cloud.firestore {
         && (!('payIdVerified' in data) || data.payIdVerified is bool)
         && (!('emailVerified' in data) || data.emailVerified is bool)
         && (!('phoneVerified' in data) || data.phoneVerified is bool)
+        && (!('authMethod' in data) || data.authMethod in ['email', 'phone'])
         && (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64))
         && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
     }
@@ -182,7 +183,7 @@ service cloud.firestore {
       allow update: if isValidUserKey(userId)
         && isValidUserProfile(incoming())
         && incoming().email == existing().email
-        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'balance', 'referralBalance', 'totalReferrals', 'accountLevel', 'avatarUrl', 'referralCode', 'payIdVerified', 'emailVerified', 'phoneVerified', 'createdAt', 'updatedAt']);
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'balance', 'referralBalance', 'totalReferrals', 'accountLevel', 'avatarUrl', 'referralCode', 'payIdVerified', 'emailVerified', 'phoneVerified', 'authMethod', 'createdAt', 'updatedAt']);
       allow delete: if isAdmin() && isValidUserKey(userId);
     }
 

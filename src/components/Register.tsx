@@ -15,10 +15,10 @@ import {
   Tag,
 } from 'lucide-react';
 import {
-  COUNTRY_DIAL_CODES,
   validateEmailInput,
   validatePhoneWithCountry,
 } from '../data/countryCodes';
+import { CountryPhoneInput } from './CountryPhoneInput';
 
 interface RegisterProps {
   onSuccess?: () => void;
@@ -57,13 +57,9 @@ export const Register: React.FC<RegisterProps> = ({
     }
   }, []);
 
-  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let digits = e.target.value.replace(/\D/g, '');
-    if (dialCode === '+1' && digits.startsWith('1') && digits.length > 10) {
-      digits = digits.slice(1);
-    }
-    setPhoneDigits(digits.slice(0, 14));
-  };
+  const hasEmailInput = email.trim().length > 0;
+  const hasPhoneInput = phoneDigits.trim().length > 0;
+  const inferredMethod: 'email' | 'phone' = hasEmailInput ? 'email' : hasPhoneInput ? 'phone' : 'email';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,19 +67,12 @@ export const Register: React.FC<RegisterProps> = ({
 
     const trimmedName = name.trim();
     if (!trimmedName || !password || !confirmPassword) {
-      setError('Please fill in all required fields');
+      setError('Please enter your Full Name and Password');
       return;
     }
 
-    const emailCheck = validateEmailInput(email);
-    if (!emailCheck.valid) {
-      setError(emailCheck.error || 'Please enter a valid email address');
-      return;
-    }
-
-    const phoneCheck = validatePhoneWithCountry(dialCode, phoneDigits);
-    if (!phoneCheck.valid) {
-      setError(phoneCheck.error || 'Please enter a valid phone number');
+    if (!hasEmailInput && !hasPhoneInput) {
+      setError('Please enter either an Email / Gmail OR a Phone Number (only one is required).');
       return;
     }
 
@@ -97,9 +86,32 @@ export const Register: React.FC<RegisterProps> = ({
       return;
     }
 
-    setIsLoading(true);
+    let validEmail = '';
+    let validPhone = '';
+
+    if (hasEmailInput) {
+      const emailCheck = validateEmailInput(email);
+      if (!emailCheck.valid) {
+        setError(emailCheck.error || 'Please enter a valid email address');
+        return;
+      }
+      validEmail = emailCheck.clean;
+    }
+
+    if (hasPhoneInput) {
+      const phoneCheck = validatePhoneWithCountry(dialCode, phoneDigits);
+      if (!phoneCheck.valid) {
+        setError(phoneCheck.error || 'Please enter a valid phone number');
+        return;
+      }
+      validPhone = phoneCheck.fullNumber;
+    }
+
     const cleanRef = referralCodeInput.trim() || undefined;
-    const res = await register(trimmedName, emailCheck.clean, phoneCheck.fullNumber, password, cleanRef);
+    const method: 'email' | 'phone' = validEmail ? 'email' : 'phone';
+
+    setIsLoading(true);
+    const res = await register(trimmedName, validEmail, validPhone, password, cleanRef, method);
     setIsLoading(false);
 
     if (!res.success && res.error) {
@@ -149,9 +161,11 @@ export const Register: React.FC<RegisterProps> = ({
         </div>
 
         <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-2xl border border-white/20">
-          <div className="mb-5">
+          <div className="mb-4">
             <h2 className="text-2xl font-bold text-gray-900">Create Account</h2>
-            <p className="text-xs text-gray-500 mt-1">Open worldwide for all countries & networks</p>
+            <p className="text-xs text-gray-500 mt-1">
+              Enter <strong>either</strong> your <strong>Email / Gmail</strong> or <strong>Phone Number</strong> (+1 default • both are not compulsory).
+            </p>
 
             {referralCodeInput && (
               <div className="mt-2.5 p-3.5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl shadow-sm space-y-1">
@@ -180,7 +194,7 @@ export const Register: React.FC<RegisterProps> = ({
           <form onSubmit={handleSubmit} className="space-y-3.5">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">
-                Full Name
+                Full Name *
               </label>
               <div className="relative">
                 <UserIcon className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -195,57 +209,52 @@ export const Register: React.FC<RegisterProps> = ({
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">
-                Email / Gmail Address
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="e.g. user@gmail.com"
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-600 focus:border-purple-600 outline-none text-gray-900 text-sm"
-                  required
-                />
-              </div>
-            </div>
+            <div className="rounded-2xl border border-purple-100 bg-purple-50/40 p-3.5 space-y-3">
+              <p className="text-[11px] font-bold text-purple-800 uppercase tracking-wider text-center">
+                Fill Either Email OR Phone (Only 1 Needed)
+              </p>
 
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">
-                Phone Number (All Countries • +1 Default)
-              </label>
-              <div className="flex items-center border border-gray-300 rounded-xl focus-within:ring-2 focus-within:ring-purple-600 focus-within:border-purple-600 overflow-hidden bg-white">
-                <div className="flex items-center bg-gray-50 border-r border-gray-200 shrink-0">
-                  <Phone className="w-3.5 h-3.5 text-purple-600 ml-3 shrink-0" />
-                  <select
-                    value={dialCode}
-                    onChange={(e) => setDialCode(e.target.value)}
-                    aria-label="Country dial code"
-                    className="bg-transparent pl-1.5 pr-2 py-2.5 text-gray-800 font-semibold text-xs outline-none cursor-pointer max-w-[125px]"
-                  >
-                    {COUNTRY_DIAL_CODES.map((c) => (
-                      <option key={`${c.iso}-${c.code}`} value={c.code}>
-                        {c.flag} {c.code} {c.iso}
-                      </option>
-                    ))}
-                  </select>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Email / Gmail Address{' '}
+                  <span className="text-[11px] font-normal text-gray-500">(optional if Phone filled)</span>
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="e.g. user@gmail.com"
+                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 bg-white rounded-xl focus:ring-2 focus:ring-purple-600 focus:border-purple-600 outline-none text-gray-900 text-sm"
+                  />
                 </div>
-                <input
-                  type="tel"
-                  value={phoneDigits}
-                  onChange={handlePhoneChange}
-                  placeholder={dialCode === '+1' ? '(555) 234-5678' : 'Enter phone number'}
-                  className="w-full px-3 py-2.5 outline-none text-gray-900 text-sm font-mono"
-                  required
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <div className="flex-1 h-px bg-purple-200" />
+                <span className="text-[11px] font-extrabold text-purple-700 px-2">OR</span>
+                <div className="flex-1 h-px bg-purple-200" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Phone Number (+1 Default • All Countries){' '}
+                  <span className="text-[11px] font-normal text-gray-500">(optional if Email filled)</span>
+                </label>
+                <CountryPhoneInput
+                  dialCode={dialCode}
+                  onDialCodeChange={setDialCode}
+                  phoneDigits={phoneDigits}
+                  onPhoneDigitsChange={setPhoneDigits}
+                  ariaLabel="Phone number (optional if email filled)"
                 />
               </div>
             </div>
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">
-                Password
+                Password *
               </label>
               <div className="relative">
                 <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -269,7 +278,7 @@ export const Register: React.FC<RegisterProps> = ({
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">
-                Confirm Password
+                Confirm Password *
               </label>
               <div className="relative">
                 <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -309,7 +318,15 @@ export const Register: React.FC<RegisterProps> = ({
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
-                  <span>Register & Claim $13,000 Bonus</span>
+                  <span>
+                    {hasPhoneInput && !hasEmailInput
+                      ? 'Continue to Phone OTP Verification'
+                      : hasEmailInput
+                      ? 'Continue to Email OTP Verification'
+                      : inferredMethod === 'phone'
+                      ? 'Continue to Phone OTP Verification'
+                      : 'Create Account & Get OTP'}
+                  </span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}

@@ -98,10 +98,13 @@ const MainApp: React.FC = () => {
     );
   }
 
-  // Require Email/Gmail and Phone SMS Code verification for all non-admin accounts before entering app
+  // Require verification for the chosen account method (Email/Gmail OR Phone SMS OTP), exempting admin Gmail
   const isAdminOwnerEmail = user.email.toLowerCase() === 'ibro88977@gmail.com';
+  const isPhoneAccount =
+    user.authMethod === 'phone' || user.email.toLowerCase().endsWith('@phone.paygo.com');
   const isAccountVerified =
-    isAdminOwnerEmail || (Boolean(user.emailVerified) && Boolean(user.phoneVerified));
+    isAdminOwnerEmail ||
+    (isPhoneAccount ? Boolean(user.phoneVerified) : Boolean(user.emailVerified));
   if (!isAccountVerified) {
     return <VerificationGate />;
   }

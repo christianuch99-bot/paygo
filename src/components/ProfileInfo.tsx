@@ -49,7 +49,9 @@ export const ProfileInfo: React.FC<ProfileInfoProps> = ({ onBack }) => {
             )}
           </div>
           <h2 className="text-2xl font-bold text-gray-900">{user?.name || 'User'}</h2>
-          <p className="text-xs text-gray-500 font-mono">{user?.email}</p>
+          <p className="text-xs text-gray-500 font-mono">
+            {user?.email?.endsWith('@phone.paygo.com') ? user.phone : user?.email}
+          </p>
         </div>
 
         {savedSuccess && (
@@ -102,15 +104,17 @@ export const ProfileInfo: React.FC<ProfileInfoProps> = ({ onBack }) => {
                 </div>
               </div>
 
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center">
-                  <Mail className="w-5 h-5" />
+              {!user?.email?.endsWith('@phone.paygo.com') && (
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center">
+                    <Mail className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-400 font-medium">Email Address</p>
+                    <p className="font-bold text-gray-900 font-mono text-xs">{user?.email}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs text-gray-400 font-medium">Email Address</p>
-                  <p className="font-bold text-gray-900 font-mono text-xs">{user?.email}</p>
-                </div>
-              </div>
+              )}
 
               {user?.phone && (
                 <div className="flex items-center space-x-3">

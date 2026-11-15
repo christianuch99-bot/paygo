@@ -140,7 +140,9 @@ export const Profile: React.FC<ProfileProps> = ({ onBack, onNavigate, onRequestL
           </button>
 
           <h2 className="text-xl font-bold text-gray-900 mt-3">{user?.name || 'User'}</h2>
-          <p className="text-xs text-gray-500 font-mono">{user?.email}</p>
+          <p className="text-xs text-gray-500 font-mono">
+            {user?.email?.endsWith('@phone.paygo.com') ? user.phone : user?.email}
+          </p>
           <p className="text-xs text-purple-600 font-medium mt-1">Tap to change profile picture</p>
         </div>
 

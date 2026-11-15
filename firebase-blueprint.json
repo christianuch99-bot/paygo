@@ -96,6 +96,7 @@
         "payIdVerified": { "type": "boolean" },
         "emailVerified": { "type": "boolean" },
         "phoneVerified": { "type": "boolean" },
+        "authMethod": { "type": "string", "enum": ["email", "phone"] },
         "createdAt": { "type": "string", "maxLength": 64 },
         "updatedAt": { "type": "string", "maxLength": 64 }
       },

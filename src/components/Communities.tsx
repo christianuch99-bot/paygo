@@ -10,9 +10,7 @@ export const Communities: React.FC<CommunitiesProps> = ({ onBack }) => {
     window.open('https://chat.whatsapp.com/EqmzDkOJOdkK86Rw13GQ1P', '_blank');
   };
 
-  const joinTelegram = () => {
-    window.open('https://t.me/Wfujw', '_blank');
-  };
+  const TELEGRAM_URL = 'https://t.me/Mike_Aper_PayGo';
 
   return (
     <div className="min-h-screen bg-gray-50 pb-12">
@@ -81,14 +79,16 @@ export const Communities: React.FC<CommunitiesProps> = ({ onBack }) => {
             Join over 10,000+ active PayGo members on Telegram to exchange referral codes, discuss earning opportunities, and receive fast help.
           </p>
 
-          <button
-            onClick={joinTelegram}
+          <a
+            href={TELEGRAM_URL}
+            target="_blank"
+            rel="noopener noreferrer"
             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-4 rounded-xl text-sm shadow-md transition-all flex items-center justify-center space-x-2"
           >
             <Send className="w-4 h-4" />
             <span>Join Telegram Channel</span>
             <ExternalLink className="w-3.5 h-3.5" />
-          </button>
+          </a>
         </div>
       </div>
     </div>

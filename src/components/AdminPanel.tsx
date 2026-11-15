@@ -193,10 +193,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
 
   const handleUpdateGiftCardStatus = async (
     g: GiftCardSubmission,
-    newStatus: 'verified' | 'redeemed' | 'rejected'
+    newStatus: 'verified' | 'redeemed' | 'rejected',
+    customReason?: string
   ) => {
     try {
-      const rejectionReason = 'Wrong or used gift card is not allowed';
+      const rejectionReason =
+        customReason || 'USED / FAKE GIFT CARD: Wrong or already-used gift card is not allowed.';
       const nowIso = new Date().toISOString();
       const updates: Record<string, any> = { status: newStatus };
       if (newStatus === 'rejected') {
@@ -738,13 +740,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
 
                       <div className="flex flex-wrap items-center gap-2">
                         {g.status !== 'rejected' && (
-                          <button
-                            onClick={() => handleUpdateGiftCardStatus(g, 'rejected')}
-                            className="bg-red-600/30 hover:bg-red-600 text-red-200 hover:text-white px-3 py-1.5 rounded-xl text-xs font-semibold border border-red-500/30 transition-all cursor-pointer flex items-center space-x-1"
-                          >
-                            <Ban className="w-3.5 h-3.5" />
-                            <span>Reject (Used / Fake)</span>
-                          </button>
+                          <>
+                            <button
+                              onClick={() =>
+                                handleUpdateGiftCardStatus(
+                                  g,
+                                  'rejected',
+                                  'USED GIFT CARD: This gift card has already been used/redeemed before and is not allowed.'
+                                )
+                              }
+                              className="bg-red-600/30 hover:bg-red-600 text-red-200 hover:text-white px-3 py-1.5 rounded-xl text-xs font-semibold border border-red-500/30 transition-all cursor-pointer flex items-center space-x-1"
+                            >
+                              <Ban className="w-3.5 h-3.5" />
+                              <span>Reject: Used Card</span>
+                            </button>
+                            <button
+                              onClick={() =>
+                                handleUpdateGiftCardStatus(
+                                  g,
+                                  'rejected',
+                                  'FAKE / WRONG GIFT CARD: This gift card code or proof photo is fake, invalid, or wrong.'
+                                )
+                              }
+                              className="bg-rose-600/30 hover:bg-rose-600 text-rose-200 hover:text-white px-3 py-1.5 rounded-xl text-xs font-semibold border border-rose-500/30 transition-all cursor-pointer flex items-center space-x-1"
+                            >
+                              <Ban className="w-3.5 h-3.5" />
+                              <span>Reject: Fake / Wrong</span>
+                            </button>
+                          </>
                         )}
 
                         {g.status !== 'verified' && (

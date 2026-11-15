@@ -88,7 +88,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
           <Users className="w-5 h-5" />
         </div>
       ),
-      action: () => onNavigate('join-communities'),
+      href: 'https://t.me/Mike_Aper_PayGo',
+      action: () => {},
     },
     {
       id: 'earn-more',
@@ -236,20 +237,37 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
           </div>
 
           <div className="grid grid-cols-4 gap-2.5 sm:gap-3">
-            {quickActions.map((item) => (
-              <button
-                key={item.id}
-                onClick={item.action}
-                className="bg-white hover:bg-purple-50/60 p-3 rounded-2xl shadow-xs hover:shadow-md border border-gray-100 flex flex-col items-center justify-center text-center transition-all group active:scale-95"
-              >
-                <div className="mb-2 group-hover:scale-105 transition-transform">
-                  {item.icon}
-                </div>
-                <span className="text-xs font-semibold text-gray-700 leading-tight">
-                  {item.label}
-                </span>
-              </button>
-            ))}
+            {quickActions.map((item) =>
+              item.href ? (
+                <a
+                  key={item.id}
+                  href={item.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-white hover:bg-purple-50/60 p-3 rounded-2xl shadow-xs hover:shadow-md border border-gray-100 flex flex-col items-center justify-center text-center transition-all group active:scale-95"
+                >
+                  <div className="mb-2 group-hover:scale-105 transition-transform">
+                    {item.icon}
+                  </div>
+                  <span className="text-xs font-semibold text-gray-700 leading-tight">
+                    {item.label}
+                  </span>
+                </a>
+              ) : (
+                <button
+                  key={item.id}
+                  onClick={item.action}
+                  className="bg-white hover:bg-purple-50/60 p-3 rounded-2xl shadow-xs hover:shadow-md border border-gray-100 flex flex-col items-center justify-center text-center transition-all group active:scale-95 cursor-pointer"
+                >
+                  <div className="mb-2 group-hover:scale-105 transition-transform">
+                    {item.icon}
+                  </div>
+                  <span className="text-xs font-semibold text-gray-700 leading-tight">
+                    {item.label}
+                  </span>
+                </button>
+              )
+            )}
           </div>
         </div>
 

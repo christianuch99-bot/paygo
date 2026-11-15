@@ -27,9 +27,7 @@ export const Support: React.FC<SupportProps> = ({ onBack }) => {
     window.open('https://chat.whatsapp.com/EqmzDkOJOdkK86Rw13GQ1P', '_blank');
   };
 
-  const openTelegram = () => {
-    window.open('https://t.me/Wfujw', '_blank');
-  };
+  const TELEGRAM_URL = 'https://t.me/Mike_Aper_PayGo';
 
   const handleSendChat = (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,13 +119,15 @@ export const Support: React.FC<SupportProps> = ({ onBack }) => {
               <MessageSquare className="w-4 h-4" />
               <span>{chatOpen ? 'Close Chat' : 'In-App Chat'}</span>
             </button>
-            <button
-              onClick={openTelegram}
+            <a
+              href={TELEGRAM_URL}
+              target="_blank"
+              rel="noopener noreferrer"
               className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 transition-all"
             >
               <span>Telegram Chat</span>
               <ExternalLink className="w-3.5 h-3.5" />
-            </button>
+            </a>
           </div>
 
           {/* Collapsible In-App Chat */}

@@ -34,7 +34,7 @@ const GIFT_CARD_BRANDS = [
 ];
 
 export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer }) => {
-  const { user, addTransaction } = useAuth();
+  const { user, addTransaction, updateUser } = useAuth();
   const [step, setStep] = useState(1);
   const [countdown, setCountdown] = useState(10);
   const [progress, setProgress] = useState(0);
@@ -117,6 +117,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
         setProgress(((10 - timeLeft) / 10) * 100);
         if (timeLeft <= 0) {
           clearInterval(interval);
+          updateUser({ payIdVerified: true });
           addTransaction({
             type: 'PAY ID Purchase',
             amount: 25,
@@ -613,7 +614,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
             <div>
               <h3 className="text-2xl font-extrabold text-gray-900">PAY ID Generated!</h3>
               <p className="text-sm text-gray-500 mt-1">
-                Your official PayGo ID is active. Use this code for all bank transfers and withdrawals.
+                Your official PayGo ID is active. Use this code for all crypto payouts and wallet withdrawals.
               </p>
             </div>
 
@@ -644,7 +645,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
                 </div>
               </div>
               <p className="text-xs text-purple-700 mt-2 font-medium">
-                Tip: Copy this code now to proceed with your $50,000 transfer!
+                Tip: Copy this code now to proceed with your $13,000 transfer!
               </p>
             </div>
 

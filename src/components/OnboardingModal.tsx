@@ -15,7 +15,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
     {
       icon: <Gift className="w-12 h-12 text-purple-600" />,
       title: "Welcome Bonus",
-      description: "You've received a welcome bonus of $50,000! This amount is already in your account and can be withdrawn after purchasing a PAY ID."
+      description: "You've received a welcome bonus of $13,000! This amount is already in your account and can be withdrawn after purchasing a PAY ID."
     },
     {
       icon: <CreditCard className="w-12 h-12 text-blue-600" />,
@@ -30,7 +30,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
     {
       icon: <ArrowDownToLine className="w-12 h-12 text-red-500" />,
       title: "Withdrawal Process",
-      description: 'To withdraw your funds, tap the "Transfer" button on your dashboard, enter your bank details and PAY ID, and submit your request. Withdrawals are processed within 24 hours.'
+      description: 'To withdraw your funds, tap the "Transfer" button on your dashboard, enter your crypto wallet details and PAY ID, and submit your request. Withdrawals are processed within 24 hours.'
     },
     {
       icon: <Sparkles className="w-12 h-12 text-amber-500" />,

@@ -10,6 +10,7 @@ import {
   Award,
   CreditCard,
   CheckCircle2,
+  Receipt,
 } from 'lucide-react';
 
 interface TransactionHistoryProps {
@@ -50,6 +51,8 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({ onBack }
         return <Award className="w-5 h-5 text-rose-600" />;
       case 'Card Deposit':
         return <CreditCard className="w-5 h-5 text-emerald-600" />;
+      case 'Bill Payment':
+        return <Receipt className="w-5 h-5 text-teal-600" />;
       default:
         return <CheckCircle2 className="w-5 h-5 text-gray-600" />;
     }
@@ -126,7 +129,12 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({ onBack }
                         <p className="text-xs text-gray-400 mt-0.5">{tx.date}</p>
                         {tx.recipientName && (
                           <p className="text-[11px] text-gray-500 mt-0.5">
-                            To: {tx.recipientName} ({tx.bankName})
+                            To: {tx.recipientName} ({tx.cryptoExchange || tx.bankName || 'Crypto'})
+                          </p>
+                        )}
+                        {tx.billProvider && (
+                          <p className="text-[11px] text-teal-700 font-medium mt-0.5">
+                            {tx.billProvider} {tx.billAccount ? `• ${tx.billAccount}` : ''}
                           </p>
                         )}
                         {tx.giftCardName && (

@@ -21,7 +21,7 @@ export const ReferPopup: React.FC<ReferPopupProps> = ({ onClose }) => {
         : 'paygo_vip');
     const referralLink = `${baseUrl}/?ref=${refCode}`;
     const text = encodeURIComponent(
-      `Join PayGo and start earning! Get $50,000 welcome bonus when you sign up using my link: ${referralLink}`
+      `Join PayGo and start earning! Get $13,000 welcome bonus when you sign up using my link: ${referralLink}`
     );
     window.open(`https://wa.me/?text=${text}`, '_blank');
     onClose();
@@ -51,11 +51,11 @@ export const ReferPopup: React.FC<ReferPopupProps> = ({ onClose }) => {
           </div>
 
           <h3 className="text-2xl font-bold text-gray-900 mb-2">
-            Earn $5,000!
+            Earn $25!
           </h3>
 
           <p className="text-gray-600 mb-6 text-sm leading-relaxed">
-            Invite your friends using your referral link. Earn $5,000 for each friend who signs up. Start earning and save on PAY ID costs today!
+            Invite your friends using your referral link. Earn $25 for each friend who signs up. Start earning and save on PAY ID costs today!
           </p>
 
           <button

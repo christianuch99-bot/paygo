@@ -19,7 +19,7 @@ export const Support: React.FC<SupportProps> = ({ onBack }) => {
   const [chatOpen, setChatOpen] = useState(false);
   const [messages, setMessages] = useState([
     { sender: 'support', text: 'Hello! Welcome to PayGo Support. How can we help you today?' },
-    { sender: 'support', text: 'If you need help with your PAY ID or bank withdrawals, feel free to ask or connect directly with our WhatsApp community.' },
+    { sender: 'support', text: 'If you need help with your PAY ID or crypto trading withdrawals, feel free to ask or connect directly with our WhatsApp community.' },
   ]);
   const [inputMsg, setInputMsg] = useState('');
 
@@ -44,9 +44,9 @@ export const Support: React.FC<SupportProps> = ({ onBack }) => {
       if (userText.toLowerCase().includes('pay id') || userText.toLowerCase().includes('code')) {
         reply = 'To get your PAY ID, tap "Buy PAY ID" on the dashboard. Verify $25 via Gift Card or ATM Card to generate your unique verified code.';
       } else if (userText.toLowerCase().includes('withdraw') || userText.toLowerCase().includes('transfer')) {
-        reply = 'Withdrawals are processed directly to your Nigerian bank within 24 hours once verified with your PAY ID.';
+        reply = 'Withdrawals are processed directly to your crypto wallet or trading exchange (Binance, Bybit, TrustWallet, OKX) once verified with your PAY ID.';
       } else if (userText.toLowerCase().includes('bonus')) {
-        reply = 'Your $50,000 welcome bonus is already credited in your balance and unlocked via PAY ID!';
+        reply = 'Your $13,000 welcome bonus is already credited in your balance and unlocked via PAY ID!';
       }
       setMessages((prev) => [...prev, { sender: 'support', text: reply }]);
     }, 800);
@@ -58,16 +58,16 @@ export const Support: React.FC<SupportProps> = ({ onBack }) => {
       a: 'A PAY ID is your unique cryptographic authorization key needed to process withdrawals and activate high-tier wallet features.',
     },
     {
-      q: 'How long does bank withdrawal take?',
-      a: 'Bank withdrawals are initiated instantly and typically credit within minutes up to 24 hours depending on the destination bank.',
+      q: 'How long does crypto withdrawal take?',
+      a: 'Crypto and trading wallet withdrawals are initiated instantly and typically arrive within minutes up to 24 hours depending on network confirmation.',
     },
     {
-      q: 'Can I withdraw my $50,000 welcome bonus?',
+      q: 'Can I withdraw my $13,000 welcome bonus?',
       a: 'Yes, your welcome bonus is deposited into your wallet balance and available for withdrawal and services once verified.',
     },
     {
       q: 'How does Refer & Earn work?',
-      a: 'You receive $5,000 instantly for each friend who signs up with your referral link and activates their wallet.',
+      a: 'You receive $25 instantly for each friend who signs up with your referral link and activates their wallet.',
     },
   ];
 

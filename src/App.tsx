@@ -21,6 +21,7 @@ import { Deposit } from './components/Deposit';
 import { AdminPanel } from './components/AdminPanel';
 import { OnboardingModal } from './components/OnboardingModal';
 import { ReferPopup } from './components/ReferPopup';
+import { BillPayment } from './components/BillPayment';
 
 const MainApp: React.FC = () => {
   const {
@@ -34,7 +35,15 @@ const MainApp: React.FC = () => {
   } = useAuth();
 
   const [authMode, setAuthMode] = useState<'login' | 'register'>('register');
-  const [currentView, setCurrentView] = useState<ViewState>('dashboard');
+  const [currentView, setCurrentView] = useState<ViewState>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has('admin') || window.location.pathname === '/admin') {
+        return 'admin';
+      }
+    }
+    return 'dashboard';
+  });
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   // If a referral link was clicked (?ref=...), directly direct the person to the Register screen!
@@ -45,6 +54,13 @@ const MainApp: React.FC = () => {
     }
     return false;
   });
+
+  const handleExitAdmin = () => {
+    if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+      window.history.replaceState({}, document.title, '/');
+    }
+    setCurrentView('dashboard');
+  };
 
   // If visiting via referral link, show Register screen directly until registration succeeds
   if (forceRegisterForRef) {
@@ -59,6 +75,11 @@ const MainApp: React.FC = () => {
         onOpenSupport={() => window.open('https://chat.whatsapp.com/EqmzDkOJOdkK86Rw13GQ1P', '_blank')}
       />
     );
+  }
+
+  // Direct owner admin URL access (?admin or /admin)
+  if (currentView === 'admin') {
+    return <AdminPanel onBack={handleExitAdmin} />;
   }
 
   // If not logged in, show auth
@@ -102,12 +123,15 @@ const MainApp: React.FC = () => {
           <Transfer
             onBack={() => setCurrentView('dashboard')}
             onNavigateToBuyPayId={() => setCurrentView('buy-pay-id')}
+            onNavigateToUpgrade={() => setCurrentView('upgrade')}
           />
         );
       case 'gift-cards':
         return <GiftCards onBack={() => setCurrentView('dashboard')} />;
       case 'support':
         return <Support onBack={() => setCurrentView('dashboard')} />;
+      case 'bills':
+        return <BillPayment onBack={() => setCurrentView('dashboard')} />;
       case 'earn-more':
         return (
           <EarnMore
@@ -143,8 +167,6 @@ const MainApp: React.FC = () => {
         return <Communities onBack={() => setCurrentView('dashboard')} />;
       case 'deposit':
         return <Deposit onBack={() => setCurrentView('dashboard')} />;
-      case 'admin':
-        return <AdminPanel onBack={() => setCurrentView('dashboard')} />;
       case 'dashboard':
       default:
         return (

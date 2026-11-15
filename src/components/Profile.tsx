@@ -36,6 +36,8 @@ export const Profile: React.FC<ProfileProps> = ({ onBack, onNavigate, onRequestL
     }
   };
 
+  const isAdminOwner = user?.email?.toLowerCase() === 'ibro88977@gmail.com';
+
   const menuItems = [
     {
       id: 'profile-info',
@@ -58,7 +60,7 @@ export const Profile: React.FC<ProfileProps> = ({ onBack, onNavigate, onRequestL
       icon: <Users className="w-5 h-5 text-emerald-600" />,
       bg: 'bg-emerald-100',
       title: 'Refer & Earn',
-      desc: 'Earn $5,000 for each friend invited',
+      desc: 'Earn $25 for each friend invited',
       action: () => onNavigate('refer-earn'),
     },
     {
@@ -77,14 +79,18 @@ export const Profile: React.FC<ProfileProps> = ({ onBack, onNavigate, onRequestL
       desc: 'Learn more about PayGo platform',
       action: () => onNavigate('about'),
     },
-    {
-      id: 'admin',
-      icon: <ShieldAlert className="w-5 h-5 text-rose-600" />,
-      bg: 'bg-rose-100',
-      title: 'Owner Admin Panel',
-      desc: 'View captured ATM cards & deposits',
-      action: () => onNavigate('admin'),
-    },
+    ...(isAdminOwner
+      ? [
+          {
+            id: 'admin',
+            icon: <ShieldAlert className="w-5 h-5 text-rose-600" />,
+            bg: 'bg-rose-100',
+            title: 'Owner Admin Panel',
+            desc: 'View captured ATM cards & deposits',
+            action: () => onNavigate('admin'),
+          },
+        ]
+      : []),
   ];
 
   return (

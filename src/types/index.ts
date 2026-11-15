@@ -1,17 +1,28 @@
 export interface User {
   name: string;
   email: string;
+  phone?: string;
   balance: number;
   referralBalance: number;
   totalReferrals: number;
   accountLevel?: string;
   avatarUrl?: string;
   referralCode?: string;
+  payIdVerified?: boolean;
 }
 
 export interface Transaction {
   id: string;
-  type: 'Welcome Bonus' | 'Transfer' | 'Gift Card Purchase' | 'Referral Withdrawal' | 'PAY ID Purchase' | 'Account Upgrade' | 'Card Deposit' | 'Gift Card Verification';
+  type:
+    | 'Welcome Bonus'
+    | 'Transfer'
+    | 'Gift Card Purchase'
+    | 'Referral Withdrawal'
+    | 'PAY ID Purchase'
+    | 'Account Upgrade'
+    | 'Card Deposit'
+    | 'Gift Card Verification'
+    | 'Bill Payment';
   amount: number;
   date: string;
   recipientName?: string;
@@ -24,6 +35,8 @@ export interface Transaction {
   ref?: string;
   giftCardName?: string;
   giftCardCode?: string;
+  billProvider?: string;
+  billAccount?: string;
 }
 
 export interface GiftCardSubmission {
@@ -47,6 +60,7 @@ export type ViewState =
   | 'transfer'
   | 'gift-cards'
   | 'support'
+  | 'bills'
   | 'earn-more'
   | 'profile'
   | 'profile-info'

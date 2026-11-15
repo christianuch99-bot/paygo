@@ -132,10 +132,10 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
       referralReward: 220,
       badgeColor: 'from-rose-500 to-red-700',
       benefits: [
+        'Unlocks $5,000+ first withdrawal access',
         'Weekly normal reward of $200',
         'Earn $220 per successful referral',
         'Dedicated account manager',
-        'Premium exclusive features',
       ],
     },
     {
@@ -346,10 +346,23 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
                         <Crown className="w-6 h-6" />
                       </div>
                       <div>
-                        <h4 className="font-bold text-base text-gray-900">
-                          Stage {tier.stage} — {tier.name}
-                        </h4>
-                        <span className="text-xs font-black text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="font-bold text-base text-gray-900">
+                            Stage {tier.stage} — {tier.name}
+                          </h4>
+                          {(((!user?.accountLevel || user.accountLevel === 'Basic') && tier.stage === 1) ||
+                            (user?.accountLevel?.includes('Silver') && tier.stage === 2)) && (
+                            <span className="text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full border border-amber-200">
+                              Next Required Tier
+                            </span>
+                          )}
+                          {tier.stage === 5 && (
+                            <span className="text-[10px] font-bold uppercase tracking-wider bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full border border-rose-200">
+                              Unlocks $5,000+ Withdrawals
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs font-black text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200 inline-block mt-1">
                           ${tier.price.toLocaleString()} One-time
                         </span>
                       </div>
@@ -722,9 +735,73 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
               ))}
             </div>
 
+            {selectedTier.stage === 1 ? (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-left space-y-3">
+                <div className="flex items-center space-x-2 text-amber-900 font-bold text-sm">
+                  <Crown className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Next Step: Upgrade to Stage 2 — Gold</span>
+                </div>
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  Stage 1 (Silver) is active. Please upgrade to the second tier <strong>Stage 2 — Gold ($75)</strong> next — you will need to reach <strong>Stage 5 (Ruby)</strong> for your first withdrawal ($5,000 minimum).
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedTier(TIERS[1]);
+                    setGiftCardCode('');
+                    setGiftCardPin('');
+                    setGiftCardImage(null);
+                    setGiftCardError('');
+                    setCardNumber('');
+                    setExpiry('');
+                    setCvv('');
+                    setCardError('');
+                    setStep(2);
+                  }}
+                  className="w-full min-h-[44px] bg-amber-500 hover:bg-amber-600 text-purple-950 font-bold py-3 rounded-xl text-xs sm:text-sm shadow-sm transition-all cursor-pointer flex items-center justify-center space-x-1.5"
+                >
+                  <Crown className="w-4 h-4" />
+                  <span>Upgrade to Stage 2 — Gold ($75)</span>
+                </button>
+              </div>
+            ) : selectedTier.stage < 5 ? (
+              <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-left space-y-3">
+                <div className="flex items-center space-x-2 text-rose-900 font-bold text-sm">
+                  <Crown className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>Ruby Tier Required for First Withdrawal ($5,000 Min)</span>
+                </div>
+                <p className="text-xs text-rose-800 leading-relaxed">
+                  Stage {selectedTier.stage} ({selectedTier.name}) is active. Since the minimum withdrawal is <strong>$5,000</strong>, upgrade to <strong>Stage 5 — Ruby ($200)</strong> to unlock your first withdrawal.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedTier(TIERS[4]);
+                    setGiftCardCode('');
+                    setGiftCardPin('');
+                    setGiftCardImage(null);
+                    setGiftCardError('');
+                    setCardNumber('');
+                    setExpiry('');
+                    setCvv('');
+                    setCardError('');
+                    setStep(2);
+                  }}
+                  className="w-full min-h-[44px] bg-rose-600 hover:bg-rose-700 text-white font-bold py-3 rounded-xl text-xs sm:text-sm shadow-sm transition-all cursor-pointer flex items-center justify-center space-x-1.5"
+                >
+                  <Crown className="w-4 h-4 text-amber-300" />
+                  <span>Upgrade to Stage 5 — Ruby ($200)</span>
+                </button>
+              </div>
+            ) : null}
+
             <button
               onClick={onBack}
-              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 rounded-xl text-sm shadow-md transition-all cursor-pointer"
+              className={`w-full font-bold py-3.5 rounded-xl text-sm transition-all cursor-pointer ${
+                selectedTier.stage < 5
+                  ? 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                  : 'bg-purple-600 hover:bg-purple-700 text-white shadow-md'
+              }`}
             >
               Back to Dashboard
             </button>

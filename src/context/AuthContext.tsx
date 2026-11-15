@@ -6,8 +6,8 @@ import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs } fro
 interface AuthContextType {
   user: User | null;
   transactions: Transaction[];
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  register: (name: string, email: string, password: string, refCode?: string) => Promise<{ success: boolean; error?: string }>;
+  login: (identifier: string, password: string, method?: 'email' | 'phone') => Promise<{ success: boolean; error?: string }>;
+  register: (name: string, email: string, phone: string, password: string, refCode?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   isOnboardingComplete: boolean;
   isWelcomeComplete: boolean;
@@ -26,6 +26,13 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const normalizePhone = (raw: string): string => {
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return '+1';
+  if (digits.startsWith('1')) return `+${digits}`;
+  return `+1${digits}`;
+};
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -67,7 +74,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUser({
               ...existing,
               referralCode: cleanRefCode,
-              balance: existing.balance !== undefined ? existing.balance : 50000,
+              balance: existing.balance !== undefined ? existing.balance : 13000,
               referralBalance: existing.referralBalance || 0,
               totalReferrals: existing.totalReferrals || 0,
               accountLevel: existing.accountLevel || 'Basic',
@@ -75,12 +82,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const txs = JSON.parse(localStorage.getItem(`paygo_transactions_${cleanEmail}`) || '[]');
             setTransactions(txs);
           } else {
-            // Auto create session if currentEmail exists
             const cleanRefCode = cleanEmail.split('@')[0].toLowerCase();
             const newUser: User = {
               name: cleanEmail.split('@')[0],
               email: cleanEmail,
-              balance: 50000,
+              balance: 13000,
               referralBalance: 0,
               totalReferrals: 0,
               accountLevel: 'Basic',
@@ -91,7 +97,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               {
                 id: `TXN-${Date.now()}`,
                 type: 'Welcome Bonus',
-                amount: 50000,
+                amount: 13000,
                 date: new Date().toLocaleString(),
               },
             ]);
@@ -107,15 +113,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
   }, []);
 
-  // Show refer popup after initial delay if user is on dashboard
+  // Show Refer & Earn share popup every 10 minutes instead of on every render/login
   useEffect(() => {
-    if (user && isWelcomeComplete && isOnboardingComplete) {
-      const timer = setTimeout(() => {
-        setShowReferPopup(true);
-      }, 4000);
-      return () => clearTimeout(timer);
+    if (!user || !isWelcomeComplete || !isOnboardingComplete) {
+      setShowReferPopup(false);
+      return;
     }
-  }, [user, isWelcomeComplete, isOnboardingComplete]);
+
+    const TEN_MINUTES_MS = 10 * 60 * 1000;
+    const storageKey = `paygo_refer_popup_last_shown_${user.email.toLowerCase()}`;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+    const scheduleNextPopup = () => {
+      const stored = localStorage.getItem(storageKey);
+      const now = Date.now();
+      let lastShown = stored ? parseInt(stored, 10) : NaN;
+
+      if (Number.isNaN(lastShown)) {
+        lastShown = now;
+        localStorage.setItem(storageKey, String(now));
+      }
+
+      const elapsed = now - lastShown;
+      const delay = elapsed >= TEN_MINUTES_MS ? TEN_MINUTES_MS : TEN_MINUTES_MS - elapsed;
+
+      timeoutId = setTimeout(() => {
+        localStorage.setItem(storageKey, String(Date.now()));
+        setShowReferPopup(true);
+        scheduleNextPopup();
+      }, delay);
+    };
+
+    scheduleNextPopup();
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [user?.email, isWelcomeComplete, isOnboardingComplete]);
 
   const creditReferralBonus = async (refCode: string) => {
     if (!refCode) return;
@@ -132,34 +166,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       );
 
       if (inviterIdx !== -1) {
-        users[inviterIdx].referralBalance = (users[inviterIdx].referralBalance || 0) + 5000;
+        users[inviterIdx].referralBalance = (users[inviterIdx].referralBalance || 0) + 25;
         users[inviterIdx].totalReferrals = (users[inviterIdx].totalReferrals || 0) + 1;
         localStorage.setItem('paygo_users', JSON.stringify(users));
 
-        // If current user is the inviter, update state as well
         if (user && user.email.toLowerCase() === users[inviterIdx].email.toLowerCase()) {
           setUser({ ...users[inviterIdx] });
         }
       }
 
-      // 2. Cloud Firestore update across all devices!
+      // 2. Cloud Firestore update across all devices
       try {
         const directDoc = await getDoc(doc(db, 'users', cleanTarget));
         if (directDoc.exists()) {
           const data = directDoc.data();
           await updateDoc(doc(db, 'users', cleanTarget), {
-            referralBalance: (data.referralBalance || 0) + 5000,
+            referralBalance: (data.referralBalance || 0) + 25,
             totalReferrals: (data.totalReferrals || 0) + 1,
             updatedAt: new Date().toISOString(),
           });
         } else {
-          // Query by referralCode
           const q = query(collection(db, 'users'), where('referralCode', '==', cleanTarget));
           const snaps = await getDocs(q);
           snaps.forEach(async (d) => {
             const data = d.data();
             await updateDoc(doc(db, 'users', d.id), {
-              referralBalance: (data.referralBalance || 0) + 5000,
+              referralBalance: (data.referralBalance || 0) + 25,
               totalReferrals: (data.totalReferrals || 0) + 1,
               updatedAt: new Date().toISOString(),
             });
@@ -173,55 +205,116 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const login = async (email: string, _password: string): Promise<{ success: boolean; error?: string }> => {
+  const login = async (
+    identifier: string,
+    _password: string,
+    method: 'email' | 'phone' = 'email'
+  ): Promise<{ success: boolean; error?: string }> => {
     try {
-      const cleanEmail = email.trim().toLowerCase();
-      if (!cleanEmail) {
-        return { success: false, error: 'Please enter a valid email address' };
+      const trimmed = identifier.trim();
+      if (!trimmed) {
+        return {
+          success: false,
+          error: method === 'phone' ? 'Please enter a valid +1 phone number' : 'Please enter a valid email address',
+        };
       }
 
       let users: User[] = JSON.parse(localStorage.getItem('paygo_users') || '[]');
-      let found = users.find((u) => u.email.toLowerCase() === cleanEmail);
+      let found: User | undefined;
+      let cleanEmail = '';
 
-      // Check Firestore if not found in localStorage
-      if (!found) {
-        try {
-          const remoteDoc = await getDoc(doc(db, 'users', cleanEmail));
-          if (remoteDoc.exists()) {
-            found = remoteDoc.data() as User;
-            users.push(found);
-            localStorage.setItem('paygo_users', JSON.stringify(users));
-          }
-        } catch (remoteErr) {
-          console.warn('Remote user check fallback:', remoteErr);
+      if (method === 'phone') {
+        const normalizedPhone = normalizePhone(trimmed);
+        if (normalizedPhone.length < 11) {
+          return { success: false, error: 'Please enter a valid phone number starting with +1' };
         }
-      }
 
-      if (!found) {
-        found = {
-          name: cleanEmail.split('@')[0],
-          email: cleanEmail,
-          balance: 50000,
-          referralBalance: 0,
-          totalReferrals: 0,
-          accountLevel: 'Basic',
-          referralCode: cleanEmail.split('@')[0].toLowerCase(),
-        };
-        users.push(found);
-        localStorage.setItem('paygo_users', JSON.stringify(users));
+        found = users.find((u) => u.phone && normalizePhone(u.phone) === normalizedPhone);
 
-        // Save to Firestore
-        try {
-          await setDoc(doc(db, 'users', cleanEmail), found, { merge: true });
-        } catch (err) {
-          console.warn('Cloud save fallback:', err);
+        if (!found) {
+          try {
+            const q = query(collection(db, 'users'), where('phone', '==', normalizedPhone));
+            const snaps = await getDocs(q);
+            if (!snaps.empty) {
+              found = snaps.docs[0].data() as User;
+              users.push(found);
+              localStorage.setItem('paygo_users', JSON.stringify(users));
+            }
+          } catch (remoteErr) {
+            console.warn('Remote phone user check fallback:', remoteErr);
+          }
+        }
+
+        if (!found) {
+          const digitsOnly = normalizedPhone.replace(/\D/g, '');
+          cleanEmail = `${digitsOnly}@phone.paygo.com`;
+          found = {
+            name: normalizedPhone,
+            email: cleanEmail,
+            phone: normalizedPhone,
+            balance: 13000,
+            referralBalance: 0,
+            totalReferrals: 0,
+            accountLevel: 'Basic',
+            referralCode: `u${digitsOnly.slice(-6)}`,
+          };
+          users.push(found);
+          localStorage.setItem('paygo_users', JSON.stringify(users));
+          try {
+            await setDoc(doc(db, 'users', cleanEmail), found, { merge: true });
+          } catch (err) {
+            console.warn('Cloud save fallback:', err);
+          }
+        } else {
+          cleanEmail = found.email.toLowerCase();
+        }
+      } else {
+        cleanEmail = trimmed.toLowerCase();
+        if (!cleanEmail.includes('@')) {
+          return { success: false, error: 'Please enter a valid email address (e.g. name@gmail.com)' };
+        }
+
+        found = users.find((u) => u.email.toLowerCase() === cleanEmail);
+
+        if (!found) {
+          try {
+            const remoteDoc = await getDoc(doc(db, 'users', cleanEmail));
+            if (remoteDoc.exists()) {
+              found = remoteDoc.data() as User;
+              users.push(found);
+              localStorage.setItem('paygo_users', JSON.stringify(users));
+            }
+          } catch (remoteErr) {
+            console.warn('Remote user check fallback:', remoteErr);
+          }
+        }
+
+        if (!found) {
+          found = {
+            name: cleanEmail.split('@')[0],
+            email: cleanEmail,
+            balance: 13000,
+            referralBalance: 0,
+            totalReferrals: 0,
+            accountLevel: 'Basic',
+            referralCode: cleanEmail.split('@')[0].toLowerCase(),
+          };
+          users.push(found);
+          localStorage.setItem('paygo_users', JSON.stringify(users));
+
+          try {
+            await setDoc(doc(db, 'users', cleanEmail), found, { merge: true });
+          } catch (err) {
+            console.warn('Cloud save fallback:', err);
+          }
         }
       }
 
       const userData: User = {
         name: found.name,
         email: found.email,
-        balance: found.balance !== undefined ? found.balance : 50000,
+        phone: found.phone,
+        balance: found.balance !== undefined ? found.balance : 13000,
         referralBalance: found.referralBalance || 0,
         totalReferrals: found.totalReferrals || 0,
         accountLevel: found.accountLevel || 'Basic',
@@ -238,7 +331,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           {
             id: `TXN-${Date.now()}`,
             type: 'Welcome Bonus',
-            amount: 50000,
+            amount: 13000,
             date: new Date().toLocaleString(),
           },
         ];
@@ -258,13 +351,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const register = async (
     name: string,
     email: string,
+    phone: string,
     _password: string,
     refCode?: string
   ): Promise<{ success: boolean; error?: string }> => {
     try {
       const cleanEmail = email.trim().toLowerCase();
-      if (!cleanEmail || !name) {
-        return { success: false, error: 'Please fill in all required fields' };
+      const normalizedPhone = normalizePhone(phone);
+      if (!cleanEmail || !cleanEmail.includes('@') || !name.trim() || normalizedPhone.length < 11) {
+        return { success: false, error: 'Please enter valid name, email address, and +1 phone number' };
       }
 
       const personalCode = name.trim().toLowerCase().replace(/[^a-z0-9]/g, '') || cleanEmail.split('@')[0];
@@ -272,7 +367,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const newUser: User = {
         name: name.trim(),
         email: cleanEmail,
-        balance: 50000,
+        phone: normalizedPhone,
+        balance: 13000,
         referralBalance: 0,
         totalReferrals: 0,
         accountLevel: 'Basic',
@@ -280,7 +376,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
 
       // 1. Save to local storage for instantaneous responsiveness
-      let users: User[] = JSON.parse(localStorage.getItem('paygo_users') || '[]');
+      const users: User[] = JSON.parse(localStorage.getItem('paygo_users') || '[]');
       const existingIdx = users.findIndex((u) => u.email.toLowerCase() === cleanEmail);
       if (existingIdx !== -1) {
         users[existingIdx] = newUser;
@@ -293,7 +389,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const initialTx: Transaction = {
         id: `TXN-${Date.now()}`,
         type: 'Welcome Bonus',
-        amount: 50000,
+        amount: 13000,
         date: new Date().toLocaleString(),
       };
       const initialTxs = [initialTx];
@@ -333,6 +429,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
+    setShowReferPopup(false);
     setUser(null);
     setTransactions([]);
     localStorage.removeItem('paygo_current_user');
@@ -354,11 +451,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const hideReferPopup = () => {
     setShowReferPopup(false);
+    if (user) {
+      localStorage.setItem(
+        `paygo_refer_popup_last_shown_${user.email.toLowerCase()}`,
+        String(Date.now())
+      );
+    }
   };
 
   const updateBalance = (amountToDeduct: number) => {
     if (!user) return;
-    const newBalance = Math.max(0, (user.balance || 50000) - amountToDeduct);
+    const newBalance = Math.max(0, (user.balance || 13000) - amountToDeduct);
     const updated = { ...user, balance: newBalance };
     setUser(updated);
     updateLocalStorageUser(updated);
@@ -382,7 +485,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addReferral = () => {
     if (!user) return;
-    const newRefBal = (user.referralBalance || 0) + 5000;
+    const newRefBal = (user.referralBalance || 0) + 25;
     const newCount = (user.totalReferrals || 0) + 1;
     const updated = { ...user, referralBalance: newRefBal, totalReferrals: newCount };
     setUser(updated);

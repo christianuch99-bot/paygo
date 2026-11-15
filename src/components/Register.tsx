@@ -1,6 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { HelpCircle, User as UserIcon, Mail, Lock, Eye, EyeOff, Sparkles, ArrowRight, Gift, LayoutDashboard, Tag } from 'lucide-react';
+import {
+  HelpCircle,
+  User as UserIcon,
+  Mail,
+  Phone,
+  Lock,
+  Eye,
+  EyeOff,
+  Sparkles,
+  ArrowRight,
+  Gift,
+  LayoutDashboard,
+  Tag,
+} from 'lucide-react';
 
 interface RegisterProps {
   onSuccess?: () => void;
@@ -9,9 +22,15 @@ interface RegisterProps {
   onContinueToDashboard?: () => void;
 }
 
-export const Register: React.FC<RegisterProps> = ({ onSuccess, onSwitchToLogin, onOpenSupport, onContinueToDashboard }) => {
+export const Register: React.FC<RegisterProps> = ({
+  onSuccess,
+  onSwitchToLogin,
+  onOpenSupport,
+  onContinueToDashboard,
+}) => {
   const [name, setName] = useState('');
-  const [identifier, setIdentifier] = useState('');
+  const [email, setEmail] = useState('');
+  const [phoneDigits, setPhoneDigits] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -32,15 +51,34 @@ export const Register: React.FC<RegisterProps> = ({ onSuccess, onSwitchToLogin, 
     }
   }, []);
 
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let digits = e.target.value.replace(/\D/g, '');
+    if (digits.startsWith('1') && digits.length > 10) {
+      digits = digits.slice(1);
+    }
+    setPhoneDigits(digits.slice(0, 14));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
     const trimmedName = name.trim();
-    let cleanIdentifier = identifier.trim().toLowerCase();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPhoneDigits = phoneDigits.replace(/\D/g, '');
 
-    if (!trimmedName || !cleanIdentifier || !password || !confirmPassword) {
+    if (!trimmedName || !cleanEmail || !cleanPhoneDigits || !password || !confirmPassword) {
       setError('Please fill in all required fields');
+      return;
+    }
+
+    if (!cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      setError('Please enter a valid email address');
+      return;
+    }
+
+    if (cleanPhoneDigits.length < 10) {
+      setError('Please enter a valid phone number starting with +1');
       return;
     }
 
@@ -54,22 +92,16 @@ export const Register: React.FC<RegisterProps> = ({ onSuccess, onSwitchToLogin, 
       return;
     }
 
-    // Auto-normalize identifier if user typed a phone number or username without @
-    let normalizedEmail = cleanIdentifier;
-    if (!normalizedEmail.includes('@')) {
-      const cleanPhone = normalizedEmail.replace(/[^a-z0-9]/g, '');
-      normalizedEmail = `${cleanPhone || 'user'}@paygo.com`;
-    }
+    const fullPhone = `+1${cleanPhoneDigits}`;
 
     setIsLoading(true);
     const cleanRef = referralCodeInput.trim() || undefined;
-    const res = await register(trimmedName, normalizedEmail, password, cleanRef);
+    const res = await register(trimmedName, cleanEmail, fullPhone, password, cleanRef);
     setIsLoading(false);
 
     if (!res.success && res.error) {
       setError(res.error);
     } else {
-      // Clear ref param from url cleanly if successful
       if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
         window.history.replaceState({}, document.title, window.location.pathname);
       }
@@ -93,7 +125,11 @@ export const Register: React.FC<RegisterProps> = ({ onSuccess, onSwitchToLogin, 
         )}
 
         <button
-          onClick={onOpenSupport ? onOpenSupport : () => window.open('https://chat.whatsapp.com/EqmzDkOJOdkK86Rw13GQ1P', '_blank')}
+          onClick={
+            onOpenSupport
+              ? onOpenSupport
+              : () => window.open('https://chat.whatsapp.com/EqmzDkOJOdkK86Rw13GQ1P', '_blank')
+          }
           className="flex items-center space-x-1.5 text-white/90 hover:text-white bg-white/15 px-3.5 py-1.5 rounded-full text-sm font-medium backdrop-blur-sm transition-all ml-auto cursor-pointer"
         >
           <HelpCircle className="w-4 h-4" />
@@ -121,14 +157,14 @@ export const Register: React.FC<RegisterProps> = ({ onSuccess, onSwitchToLogin, 
                   <span>Referral Invitation Active!</span>
                 </div>
                 <p className="text-xs text-emerald-100">
-                  You were invited by <strong className="text-white uppercase">{referralCodeInput}</strong>. You'll receive a $50,000 welcome bonus upon sign up!
+                  You were invited by <strong className="text-white uppercase">{referralCodeInput}</strong>. You'll receive a $13,000 welcome bonus upon sign up!
                 </p>
               </div>
             )}
 
             <div className="mt-2.5 flex items-center space-x-1.5 bg-purple-50 text-purple-700 p-2.5 rounded-xl border border-purple-100 text-xs font-medium">
               <Sparkles className="w-4 h-4 shrink-0 text-amber-500" />
-              <span>Get <strong>$50,000 welcome bonus</strong> instantly upon sign up!</span>
+              <span>Get <strong>$13,000 welcome bonus</strong> instantly upon sign up!</span>
             </div>
           </div>
 
@@ -158,16 +194,36 @@ export const Register: React.FC<RegisterProps> = ({ onSuccess, onSwitchToLogin, 
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">
-                Email Address or Phone Number
+                Email Address
               </label>
               <div className="relative">
                 <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
-                  type="text"
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder="Phone (080...) or Email (user@gmail.com)"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="e.g. user@gmail.com"
                   className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-600 focus:border-purple-600 outline-none text-gray-900 text-sm"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">
+                Phone Number (+1)
+              </label>
+              <div className="flex items-center border border-gray-300 rounded-xl focus-within:ring-2 focus-within:ring-purple-600 focus-within:border-purple-600 overflow-hidden bg-white">
+                <div className="flex items-center space-x-1.5 pl-3.5 pr-2.5 py-2.5 bg-gray-50 border-r border-gray-200 text-gray-700 font-semibold text-sm select-none shrink-0">
+                  <Phone className="w-4 h-4 text-purple-600" />
+                  <span>+1</span>
+                </div>
+                <input
+                  type="tel"
+                  value={phoneDigits}
+                  onChange={handlePhoneChange}
+                  placeholder="(555) 234-5678"
+                  className="w-full px-3 py-2.5 outline-none text-gray-900 text-sm font-mono"
                   required
                 />
               </div>
@@ -239,7 +295,7 @@ export const Register: React.FC<RegisterProps> = ({ onSuccess, onSwitchToLogin, 
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
-                  <span>Register & Claim $50,000 Bonus</span>
+                  <span>Register & Claim $13,000 Bonus</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}

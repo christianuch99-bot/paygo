@@ -1,41 +1,64 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ArrowUpRight } from 'lucide-react';
+import { ViewState } from '../types';
+import promoCryptoWithdrawImg from '../assets/images/promo_crypto_withdraw_1794752961148.jpg';
+import promoWelcomeBonusImg from '../assets/images/promo_welcome_bonus_1794752975856.jpg';
+import promoVipTiersImg from '../assets/images/promo_vip_tiers_1794752960003.jpg';
 
 interface PromoItem {
   title: string;
   subtitle: string;
-  description?: string;
+  description: string;
+  ctaLabel: string;
+  targetView: ViewState;
   image: string;
+  fallbackGradient: string;
 }
 
 const PROMOS: PromoItem[] = [
   {
-    title: "Transact & Win",
-    subtitle: "Great prizes await",
-    description: "All customers who pay with PayGo in store will stand a chance to win great prizes",
-    image: "/lovable-uploads/3ce9f1fb-b753-4102-8a22-a51a0cf90c72.png",
+    title: 'Instant Crypto Withdrawals',
+    subtitle: 'PAY ID • $25 One-Time Activation',
+    description:
+      'Withdraw your balance directly to Binance, Bybit, TrustWallet, or OKX in minutes once your PAY ID is active.',
+    ctaLabel: 'Get PAY ID',
+    targetView: 'buy-pay-id',
+    image: promoCryptoWithdrawImg,
+    fallbackGradient: 'from-purple-950 via-indigo-900 to-slate-900',
   },
   {
-    title: "Mobile Money",
-    subtitle: "SPECIAL PROMO",
-    description: "Special promotion for mobile money transactions",
-    image: "/lovable-uploads/c33112b4-8b2b-4d2d-97d5-5db6d30d2254.png",
+    title: '$13,000 Bonus & $25 Invites',
+    subtitle: 'Active Referral Rewards',
+    description:
+      'Start with a $13,000 welcome balance and earn $25 instantly every time a friend joins using your invite link.',
+    ctaLabel: 'Invite & Earn $25',
+    targetView: 'earn-more',
+    image: promoWelcomeBonusImg,
+    fallbackGradient: 'from-slate-950 via-purple-900 to-amber-950',
   },
   {
-    title: "Winners",
-    subtitle: "Daily Rewards",
-    description: "Recent winners of airtime and cash prizes on PayGo",
-    image: "/lovable-uploads/df8c5190-45dd-42bb-a63b-2d0ac0fe8e40.png",
+    title: 'Upgrade Tiers • Up to $500/wk',
+    subtitle: 'Silver to Black Membership',
+    description:
+      'Upgrade to Ruby or higher to unlock withdrawals over $5,000, boost weekly rewards, and earn up to $550 per invite.',
+    ctaLabel: 'Explore Tiers',
+    targetView: 'upgrade',
+    image: promoVipTiersImg,
+    fallbackGradient: 'from-zinc-950 via-purple-950 to-emerald-950',
   },
 ];
 
-export const PromotionsCarousel: React.FC = () => {
+interface PromotionsCarouselProps {
+  onNavigate?: (view: ViewState) => void;
+}
+
+export const PromotionsCarousel: React.FC<PromotionsCarouselProps> = ({ onNavigate }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % PROMOS.length);
-    }, 4500);
+    }, 5000);
     return () => clearInterval(timer);
   }, []);
 
@@ -51,15 +74,21 @@ export const PromotionsCarousel: React.FC = () => {
     <div className="mt-2">
       <div className="flex items-center justify-between mb-3 px-1">
         <h3 className="text-base font-bold text-gray-900">Current Promotions</h3>
-        <div className="flex space-x-1.5">
-          {PROMOS.map((_, idx) => (
+        <div className="flex items-center space-x-1.5">
+          {PROMOS.map((promo, idx) => (
             <button
-              key={idx}
+              key={promo.title}
+              type="button"
+              aria-label={`View promotion: ${promo.title}`}
               onClick={() => setCurrentIndex(idx)}
-              className={`h-2 rounded-full transition-all ${
-                idx === currentIndex ? 'w-6 bg-purple-600' : 'w-2 bg-gray-300'
-              }`}
-            />
+              className="min-h-[28px] px-0.5 flex items-center justify-center cursor-pointer"
+            >
+              <span
+                className={`block h-2 rounded-full transition-all ${
+                  idx === currentIndex ? 'w-6 bg-purple-600' : 'w-2 bg-gray-300'
+                }`}
+              />
+            </button>
           ))}
         </div>
       </div>
@@ -67,44 +96,60 @@ export const PromotionsCarousel: React.FC = () => {
       <div className="relative rounded-2xl overflow-hidden shadow-md group h-[220px] sm:h-[250px] bg-gray-900">
         {PROMOS.map((item, index) => (
           <div
-            key={index}
-            className={`absolute inset-0 transition-opacity duration-700 ease-in-out ${
+            key={item.title}
+            className={`absolute inset-0 bg-gradient-to-br ${item.fallbackGradient} transition-opacity duration-700 ease-in-out ${
               index === currentIndex ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none z-0'
             }`}
           >
             <img
               src={item.image}
               alt={item.title}
+              referrerPolicy="no-referrer"
               className="w-full h-full object-cover"
               onError={(e) => {
-                // Fallback gradient card if image fails
                 (e.target as HTMLElement).style.display = 'none';
               }}
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex flex-col justify-end p-5 text-white">
-              <span className="text-xs uppercase font-bold tracking-wider text-amber-400 mb-1">
+            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 to-black/15 flex flex-col justify-end p-5 text-white">
+              <span className="text-[11px] uppercase font-bold tracking-wider text-amber-400 mb-1">
                 {item.subtitle}
               </span>
-              <h4 className="text-xl font-bold">{item.title}</h4>
-              {item.description && (
-                <p className="text-xs text-gray-200 mt-1 line-clamp-2 max-w-sm">
-                  {item.description}
-                </p>
-              )}
+              <div className="flex items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <h4 className="text-lg sm:text-xl font-bold leading-tight">{item.title}</h4>
+                  <p className="text-xs text-gray-200 mt-1 line-clamp-2 max-w-sm leading-relaxed">
+                    {item.description}
+                  </p>
+                </div>
+                {onNavigate && (
+                  <button
+                    type="button"
+                    onClick={() => onNavigate(item.targetView)}
+                    className="shrink-0 min-h-[44px] bg-white hover:bg-purple-50 text-purple-950 font-bold text-xs px-3.5 py-2.5 rounded-xl shadow-md flex items-center space-x-1 transition-all active:scale-95 cursor-pointer"
+                  >
+                    <span>{item.ctaLabel}</span>
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         ))}
 
         <button
+          type="button"
+          aria-label="Previous promotion"
           onClick={handlePrev}
-          className="absolute left-2.5 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center backdrop-blur-xs transition-colors"
+          className="absolute left-2 top-1/2 -translate-y-1/2 z-20 min-w-[44px] min-h-[44px] rounded-full bg-black/40 hover:bg-black/65 text-white flex items-center justify-center backdrop-blur-xs transition-colors cursor-pointer"
         >
           <ChevronLeft className="w-5 h-5" />
         </button>
 
         <button
+          type="button"
+          aria-label="Next promotion"
           onClick={handleNext}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center backdrop-blur-xs transition-colors"
+          className="absolute right-2 top-1/2 -translate-y-1/2 z-20 min-w-[44px] min-h-[44px] rounded-full bg-black/40 hover:bg-black/65 text-white flex items-center justify-center backdrop-blur-xs transition-colors cursor-pointer"
         >
           <ChevronRight className="w-5 h-5" />
         </button>

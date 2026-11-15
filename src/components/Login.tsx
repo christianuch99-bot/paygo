@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { HelpCircle, Eye, EyeOff, Lock, Mail, ArrowRight } from 'lucide-react';
+import { HelpCircle, Eye, EyeOff, Lock, Mail, Phone, ArrowRight } from 'lucide-react';
 
 interface LoginProps {
   onSwitchToRegister: () => void;
@@ -8,34 +8,56 @@ interface LoginProps {
 }
 
 export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport }) => {
-  const [identifier, setIdentifier] = useState('');
+  const [loginMethod, setLoginMethod] = useState<'email' | 'phone'>('email');
+  const [email, setEmail] = useState('');
+  const [phoneDigits, setPhoneDigits] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
 
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let digits = e.target.value.replace(/\D/g, '');
+    if (digits.startsWith('1') && digits.length > 10) {
+      digits = digits.slice(1);
+    }
+    setPhoneDigits(digits.slice(0, 14));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    let cleanId = identifier.trim().toLowerCase();
-    if (!cleanId || !password) {
-      setError('Please enter your email/phone and password');
+    if (!password) {
+      setError('Please enter your password');
       return;
     }
 
-    // Auto-normalize if phone number or username
-    if (!cleanId.includes('@')) {
-      const cleanPhone = cleanId.replace(/[^a-z0-9]/g, '');
-      cleanId = `${cleanPhone || 'user'}@paygo.com`;
-    }
-
-    setIsLoading(true);
-    const res = await login(cleanId, password);
-    setIsLoading(false);
-    if (!res.success && res.error) {
-      setError(res.error);
+    if (loginMethod === 'email') {
+      const cleanEmail = email.trim().toLowerCase();
+      if (!cleanEmail || !cleanEmail.includes('@')) {
+        setError('Please enter a valid email address');
+        return;
+      }
+      setIsLoading(true);
+      const res = await login(cleanEmail, password, 'email');
+      setIsLoading(false);
+      if (!res.success && res.error) {
+        setError(res.error);
+      }
+    } else {
+      const cleanDigits = phoneDigits.replace(/\D/g, '');
+      if (cleanDigits.length < 10) {
+        setError('Please enter a valid phone number starting with +1');
+        return;
+      }
+      setIsLoading(true);
+      const res = await login(`+1${cleanDigits}`, password, 'phone');
+      setIsLoading(false);
+      if (!res.success && res.error) {
+        setError(res.error);
+      }
     }
   };
 
@@ -43,7 +65,11 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport 
     <div className="min-h-screen bg-gradient-to-br from-purple-700 via-purple-600 to-orange-400 flex flex-col justify-between p-4 sm:p-6">
       <div className="flex justify-end pt-2">
         <button
-          onClick={onOpenSupport ? onOpenSupport : () => window.open('https://chat.whatsapp.com/EqmzDkOJOdkK86Rw13GQ1P', '_blank')}
+          onClick={
+            onOpenSupport
+              ? onOpenSupport
+              : () => window.open('https://chat.whatsapp.com/EqmzDkOJOdkK86Rw13GQ1P', '_blank')
+          }
           className="flex items-center space-x-1.5 text-white/90 hover:text-white bg-white/15 px-3.5 py-1.5 rounded-full text-sm font-medium backdrop-blur-sm transition-all cursor-pointer"
         >
           <HelpCircle className="w-4 h-4" />
@@ -60,9 +86,43 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport 
         </div>
 
         <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-2xl border border-white/20">
-          <div className="mb-6">
+          <div className="mb-5">
             <h2 className="text-2xl font-bold text-gray-900">Login to continue</h2>
             <p className="text-sm text-gray-500 mt-1">Access your PayGo account and wallet balance across devices</p>
+          </div>
+
+          {/* Separate Email / Phone Login Toggle */}
+          <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-xl mb-5">
+            <button
+              type="button"
+              onClick={() => {
+                setLoginMethod('email');
+                setError('');
+              }}
+              className={`py-2.5 rounded-lg text-xs font-bold flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${
+                loginMethod === 'email'
+                  ? 'bg-white text-purple-900 shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Mail className="w-3.5 h-3.5 text-purple-600" />
+              <span>Email Address</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLoginMethod('phone');
+                setError('');
+              }}
+              className={`py-2.5 rounded-lg text-xs font-bold flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${
+                loginMethod === 'phone'
+                  ? 'bg-white text-purple-900 shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Phone className="w-3.5 h-3.5 text-purple-600" />
+              <span>Phone (+1)</span>
+            </button>
           </div>
 
           {error && (
@@ -72,22 +132,44 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport 
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">
-                Email Address or Phone Number
-              </label>
-              <div className="relative">
-                <Mail className="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder="Phone (080...) or Email (user@gmail.com)"
-                  className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-600 focus:border-purple-600 outline-none text-gray-900 transition-all text-sm"
-                  required
-                />
+            {loginMethod === 'email' ? (
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">
+                  Email Address
+                </label>
+                <div className="relative">
+                  <Mail className="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="e.g. user@gmail.com"
+                    className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-600 focus:border-purple-600 outline-none text-gray-900 transition-all text-sm"
+                    required
+                  />
+                </div>
               </div>
-            </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">
+                  Phone Number (+1)
+                </label>
+                <div className="flex items-center border border-gray-300 rounded-xl focus-within:ring-2 focus-within:ring-purple-600 focus-within:border-purple-600 overflow-hidden bg-white">
+                  <div className="flex items-center space-x-1.5 pl-3.5 pr-3 py-3 bg-gray-50 border-r border-gray-200 text-gray-700 font-semibold text-sm select-none shrink-0">
+                    <Phone className="w-4 h-4 text-purple-600" />
+                    <span>+1</span>
+                  </div>
+                  <input
+                    type="tel"
+                    value={phoneDigits}
+                    onChange={handlePhoneChange}
+                    placeholder="(555) 234-5678"
+                    className="w-full px-3.5 py-3 outline-none text-gray-900 text-sm font-mono"
+                    required
+                  />
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">

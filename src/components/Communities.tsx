@@ -52,7 +52,7 @@ export const Communities: React.FC<CommunitiesProps> = ({ onBack }) => {
           </div>
 
           <p className="text-xs text-gray-600 leading-relaxed">
-            Get instant notifications about bank server status, withdrawal schedules, promotional bonuses, and direct customer care assistance.
+            Get instant notifications about crypto payout status, withdrawal schedules, promotional bonuses, and direct customer care assistance.
           </p>
 
           <button
@@ -78,7 +78,7 @@ export const Communities: React.FC<CommunitiesProps> = ({ onBack }) => {
           </div>
 
           <p className="text-xs text-gray-600 leading-relaxed">
-            Join over 10,000+ Nigerian PayGo users on Telegram to exchange referral codes, discuss earning opportunities, and receive fast help.
+            Join over 10,000+ active PayGo members on Telegram to exchange referral codes, discuss earning opportunities, and receive fast help.
           </p>
 
           <button

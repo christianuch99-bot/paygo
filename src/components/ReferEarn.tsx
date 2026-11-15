@@ -42,7 +42,7 @@ export const ReferEarn: React.FC<ReferEarnProps> = ({ onBack }) => {
   // Real, personalized referral code
   const realCode = user?.referralCode || (user?.name ? user.name.toLowerCase().replace(/[^a-z0-9]/g, '') : (user?.email ? user.email.split('@')[0].toLowerCase() : 'paygo_vip'));
   const referralLink = `${appBaseUrl}/?ref=${realCode}`;
-  const referralMsg = `Join PayGo and start earning! Get $50,000 welcome bonus when you sign up using my referral link: ${referralLink}`;
+  const referralMsg = `Join PayGo and start earning! Get $13,000 welcome bonus when you sign up using my referral link: ${referralLink}`;
 
   const fallbackCopyText = (text: string, type: 'link' | 'code' | 'msg') => {
     const textArea = document.createElement("textarea");
@@ -219,7 +219,7 @@ export const ReferEarn: React.FC<ReferEarnProps> = ({ onBack }) => {
           </button>
           <div>
             <h1 className="text-lg font-bold">Refer & Earn Dashboard</h1>
-            <p className="text-xs text-purple-200">Earn $5,000 for every verified invite</p>
+            <p className="text-xs text-purple-200">Earn $25 for every verified invite</p>
           </div>
         </div>
       </div>
@@ -246,7 +246,7 @@ export const ReferEarn: React.FC<ReferEarnProps> = ({ onBack }) => {
             </div>
             <div className="bg-white/10 rounded-xl p-2.5">
               <p className="text-[11px] text-purple-100 uppercase font-medium">Per Referral</p>
-              <p className="text-lg font-black">$5,000</p>
+              <p className="text-lg font-black">$25</p>
             </div>
           </div>
         </div>
@@ -370,7 +370,7 @@ export const ReferEarn: React.FC<ReferEarnProps> = ({ onBack }) => {
                 type="number"
                 value={withdrawAmount}
                 onChange={(e) => setWithdrawAmount(e.target.value)}
-                placeholder="e.g. 5000"
+                placeholder="e.g. 25"
                 className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-600 outline-none text-sm font-bold text-gray-900"
               />
             </div>

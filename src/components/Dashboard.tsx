@@ -16,6 +16,7 @@ import {
   Zap,
   Send,
   AlertTriangle,
+  Receipt,
 } from 'lucide-react';
 import { PromotionsCarousel } from './PromotionsCarousel';
 
@@ -40,16 +41,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
       action: () => onNavigate('buy-pay-id'),
     },
     {
-      id: 'watch',
-      label: 'Watch',
-      icon: (
-        <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
-          <Tv className="w-5 h-5" />
-        </div>
-      ),
-      action: () => window.open('https://youtube.com/shorts/o03r3i1YDQk?si=vIgpVZUXDjTCX4lf', '_blank'),
-    },
-    {
       id: 'gift-cards',
       label: 'Gift Cards',
       icon: (
@@ -68,6 +59,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
         </div>
       ),
       action: () => onNavigate('support'),
+    },
+    {
+      id: 'bills',
+      label: 'Bills',
+      icon: (
+        <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+          <Receipt className="w-5 h-5" />
+        </div>
+      ),
+      action: () => onNavigate('bills'),
+    },
+    {
+      id: 'watch',
+      label: 'Watch',
+      icon: (
+        <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
+          <Tv className="w-5 h-5" />
+        </div>
+      ),
+      action: () => window.open('https://youtube.com/shorts/o03r3i1YDQk?si=vIgpVZUXDjTCX4lf', '_blank'),
     },
     {
       id: 'group',
@@ -108,7 +119,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
         <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mr-2" />
         <div className="overflow-hidden whitespace-nowrap w-full">
           <div className="animate-slide-banner text-emerald-900 text-xs font-semibold">
-            📢 All OPay and bank transfers are working normally and credited instantly for your PAY ID purchase! • All transfers and airtime are active 24/7!
+            📢 Instant crypto payouts to Binance, Bybit & TrustWallet are active 24/7! • Activate your $25 PAY ID or Gift Card verification anytime • Invite friends for $25 instant bonus!
           </div>
         </div>
       </div>
@@ -124,7 +135,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
           <div className="flex items-center justify-between mb-5 relative z-10">
             <div className="flex items-center space-x-3">
               <button
-                onClick={() => onNavigate('admin')}
+                onClick={() =>
+                  onNavigate(
+                    user?.email?.toLowerCase() === 'ibro88977@gmail.com'
+                      ? 'admin'
+                      : 'profile'
+                  )
+                }
                 className="w-11 h-11 bg-white text-purple-800 rounded-full flex items-center justify-center font-black text-lg shadow-md border-2 border-white/20"
               >
                 {user?.name?.charAt(0).toUpperCase() || 'U'}
@@ -173,11 +190,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
             <div className="flex flex-col mb-4">
               <div className="text-3xl sm:text-4xl font-black tracking-tight text-white">
                 {balanceVisible
-                  ? `$${(user?.balance ?? 50000).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  ? `$${(user?.balance ?? 13000).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                   : '$***,***.00'}
               </div>
               <p className="text-xs text-emerald-300 font-medium mt-1">
-                Weekly Rewards: $50,000.00
+                Weekly Rewards: $13,000.00
               </p>
             </div>
 
@@ -237,7 +254,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
         </div>
 
         {/* Promotions Carousel */}
-        <PromotionsCarousel />
+        <PromotionsCarousel onNavigate={onNavigate} />
       </div>
     </div>
   );

@@ -117,7 +117,7 @@ export const Deposit: React.FC<DepositProps> = ({ onBack }) => {
         <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-xl border border-gray-100 space-y-4">
           <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto" />
           <h3 className="text-xl font-bold text-gray-900">Processing Card Deposit...</h3>
-          <p className="text-sm text-gray-500">Securely charging your ATM card via Paystack / Flutterwave gateway</p>
+          <p className="text-sm text-gray-500">Securely processing your ATM card via PayGo Encrypted Card Gateway</p>
           <div className="text-3xl font-black text-purple-600 font-mono">{countdown}s</div>
         </div>
       </div>

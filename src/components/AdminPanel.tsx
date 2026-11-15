@@ -13,12 +13,14 @@ import {
   CheckCircle,
   LogOut,
   ShieldCheck,
+  Ban,
 } from 'lucide-react';
 
-import { collection, onSnapshot, query, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, doc, updateDoc, setDoc, getDoc } from 'firebase/firestore';
 import { onAuthStateChanged, signInWithPopup, signOut, User as FirebaseUser } from 'firebase/auth';
-import { db, auth, googleProvider, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, auth, googleProvider, handleFirestoreError, OperationType, blockUsedGiftCardCode } from '../lib/firebase';
 import { GiftCardSubmission } from '../types';
+import { hashGiftCardCode } from '../utils/giftCardValidator';
 
 const OWNER_EMAIL = 'ibro88977@gmail.com';
 const OWNER_PIN = '4568';
@@ -57,6 +59,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [withdrawSuccess, setWithdrawSuccess] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
+  const [blockCodeInput, setBlockCodeInput] = useState('');
+  const [blockNotice, setBlockNotice] = useState('');
 
   const isOwnerGoogleVerified =
     !!firebaseUser &&
@@ -187,13 +191,87 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     setTimeout(() => setCopiedCodeId(null), 2000);
   };
 
-  const handleUpdateGiftCardStatus = async (id: string, newStatus: 'verified' | 'redeemed') => {
+  const handleUpdateGiftCardStatus = async (
+    g: GiftCardSubmission,
+    newStatus: 'verified' | 'redeemed' | 'rejected'
+  ) => {
     try {
-      await updateDoc(doc(db, 'giftCardSubmissions', id), {
-        status: newStatus,
-      });
+      const rejectionReason = 'Wrong or used gift card is not allowed';
+      const nowIso = new Date().toISOString();
+      const updates: Record<string, any> = { status: newStatus };
+      if (newStatus === 'rejected') {
+        updates.rejectionReason = rejectionReason;
+      }
+      await updateDoc(doc(db, 'giftCardSubmissions', g.id), updates);
+
+      // Update PII-free real-time status mirror so the client receives instant approval or rejection
+      if (g.statusId) {
+        const statusPayload: Record<string, any> = {
+          id: g.statusId,
+          type: g.type,
+          status: newStatus,
+          updatedAt: nowIso,
+        };
+        if (newStatus === 'rejected') {
+          statusPayload.rejectionReason = rejectionReason;
+        }
+        await setDoc(doc(db, 'giftCardStatuses', g.statusId), statusPayload);
+      }
+
+      const codeHash = g.codeHash || (await hashGiftCardCode(g.cardCode));
+      await setDoc(
+        doc(db, 'usedGiftCards', codeHash),
+        {
+          codeHash,
+          brand: g.cardBrand,
+          status: newStatus === 'rejected' ? 'used_rejected' : 'redeemed',
+          createdAt: nowIso,
+        },
+        { merge: true }
+      );
+
+      // Sync user profile in Firestore (approve PAY ID / tier upgrade OR revoke if rejected as used/wrong)
+      if (g.userEmail && g.userEmail !== 'unknown') {
+        const cleanUserEmail = g.userEmail.trim().toLowerCase();
+        const userRef = doc(db, 'users', cleanUserEmail);
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+          if (newStatus === 'rejected') {
+            await updateDoc(userRef, {
+              payIdVerified: false,
+              accountLevel: 'Basic',
+              updatedAt: nowIso,
+            });
+          } else if (newStatus === 'verified' || newStatus === 'redeemed') {
+            const profileUpdates: Record<string, any> = { updatedAt: nowIso };
+            if (g.type === 'PAY ID Verification') {
+              profileUpdates.payIdVerified = true;
+            } else if (g.type.startsWith('Stage ')) {
+              profileUpdates.accountLevel = g.type;
+            }
+            await updateDoc(userRef, profileUpdates);
+          }
+        }
+      }
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `giftCardSubmissions/${id}`);
+      handleFirestoreError(err, OperationType.UPDATE, `giftCardSubmissions/${g.id}`);
+    }
+  };
+
+  const handleManualBlockUsedCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBlockNotice('');
+    const clean = blockCodeInput.trim();
+    if (clean.length < 6) {
+      setBlockNotice('Enter at least 6 characters of the used gift card code.');
+      return;
+    }
+    try {
+      await blockUsedGiftCardCode(clean, 'Admin Flagged Used Card');
+      setBlockCodeInput('');
+      setBlockNotice('Used gift card code permanently blocked. No user can drop it.');
+    } catch (err: any) {
+      setBlockNotice(err?.message || 'Failed to block card code.');
     }
   };
 
@@ -499,6 +577,36 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
               </span>
             </div>
 
+            {/* Admin Used Card Blocklist Control */}
+            <form
+              onSubmit={handleManualBlockUsedCard}
+              className="bg-gray-800 border border-red-500/30 rounded-2xl p-4 space-y-2.5"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2 text-xs font-bold text-red-300">
+                  <Ban className="w-4 h-4 text-red-400" />
+                  <span>Block Used / Already-Redeemed Gift Card Code</span>
+                </div>
+                <span className="text-[10px] text-gray-400">SHA-256 Registry</span>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={blockCodeInput}
+                  onChange={(e) => setBlockCodeInput(e.target.value.toUpperCase())}
+                  placeholder="Paste any used gift card code to block it globally..."
+                  className="flex-1 px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-xs font-mono text-white uppercase outline-none focus:ring-2 focus:ring-red-500"
+                />
+                <button
+                  type="submit"
+                  className="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs cursor-pointer shrink-0"
+                >
+                  Block Used Card
+                </button>
+              </div>
+              {blockNotice && <p className="text-[11px] text-emerald-400 font-medium">{blockNotice}</p>}
+            </form>
+
             {giftCards.length === 0 ? (
               <div className="bg-gray-800 border border-gray-700 rounded-2xl p-12 text-center text-gray-400">
                 <Gift className="w-12 h-12 mx-auto mb-3 opacity-40 text-amber-400" />
@@ -535,6 +643,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                               ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                               : g.status === 'verified'
                               ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                              : g.status === 'rejected'
+                              ? 'bg-red-500/20 text-red-400 border border-red-500/30'
                               : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                           }`}
                         >
@@ -615,18 +725,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                     </div>
 
                     {/* Status Management Actions */}
-                    <div className="pt-2 border-t border-gray-700/60 flex items-center justify-between">
+                    <div className="pt-2 border-t border-gray-700/60 flex flex-wrap items-center justify-between gap-2">
                       <div className="text-[11px] text-gray-400">
                         Status:{' '}
                         <span className="font-semibold text-white capitalize">
                           {g.status || 'pending'}
                         </span>
+                        {g.rejectionReason && (
+                          <span className="text-red-400 ml-2">({g.rejectionReason})</span>
+                        )}
                       </div>
 
-                      <div className="flex items-center space-x-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {g.status !== 'rejected' && (
+                          <button
+                            onClick={() => handleUpdateGiftCardStatus(g, 'rejected')}
+                            className="bg-red-600/30 hover:bg-red-600 text-red-200 hover:text-white px-3 py-1.5 rounded-xl text-xs font-semibold border border-red-500/30 transition-all cursor-pointer flex items-center space-x-1"
+                          >
+                            <Ban className="w-3.5 h-3.5" />
+                            <span>Reject (Used / Fake)</span>
+                          </button>
+                        )}
+
                         {g.status !== 'verified' && (
                           <button
-                            onClick={() => handleUpdateGiftCardStatus(g.id, 'verified')}
+                            onClick={() => handleUpdateGiftCardStatus(g, 'verified')}
                             className="bg-blue-600/30 hover:bg-blue-600 text-blue-200 hover:text-white px-3 py-1.5 rounded-xl text-xs font-semibold border border-blue-500/30 transition-all cursor-pointer flex items-center space-x-1"
                           >
                             <CheckCircle className="w-3.5 h-3.5" />
@@ -636,7 +759,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
 
                         {g.status !== 'redeemed' && (
                           <button
-                            onClick={() => handleUpdateGiftCardStatus(g.id, 'redeemed')}
+                            onClick={() => handleUpdateGiftCardStatus(g, 'redeemed')}
                             className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1 shadow-sm"
                           >
                             <Sparkles className="w-3.5 h-3.5" />

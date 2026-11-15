@@ -9,6 +9,8 @@ export interface User {
   avatarUrl?: string;
   referralCode?: string;
   payIdVerified?: boolean;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
 }
 
 export interface Transaction {
@@ -48,10 +50,13 @@ export interface GiftCardSubmission {
   amount: number;
   cardFormat?: 'physical' | 'ecode';
   image?: string;
+  codeHash?: string;
+  statusId?: string;
+  rejectionReason?: string;
   userEmail: string;
   userName: string;
   date: string;
-  status: 'pending' | 'verified' | 'redeemed';
+  status: 'pending' | 'verified' | 'redeemed' | 'rejected';
 }
 
 export type ViewState =

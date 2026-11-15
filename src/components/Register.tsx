@@ -14,6 +14,11 @@ import {
   LayoutDashboard,
   Tag,
 } from 'lucide-react';
+import {
+  COUNTRY_DIAL_CODES,
+  validateEmailInput,
+  validatePhoneWithCountry,
+} from '../data/countryCodes';
 
 interface RegisterProps {
   onSuccess?: () => void;
@@ -30,6 +35,7 @@ export const Register: React.FC<RegisterProps> = ({
 }) => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [dialCode, setDialCode] = useState('+1');
   const [phoneDigits, setPhoneDigits] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -53,7 +59,7 @@ export const Register: React.FC<RegisterProps> = ({
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let digits = e.target.value.replace(/\D/g, '');
-    if (digits.startsWith('1') && digits.length > 10) {
+    if (dialCode === '+1' && digits.startsWith('1') && digits.length > 10) {
       digits = digits.slice(1);
     }
     setPhoneDigits(digits.slice(0, 14));
@@ -64,21 +70,20 @@ export const Register: React.FC<RegisterProps> = ({
     setError('');
 
     const trimmedName = name.trim();
-    const cleanEmail = email.trim().toLowerCase();
-    const cleanPhoneDigits = phoneDigits.replace(/\D/g, '');
-
-    if (!trimmedName || !cleanEmail || !cleanPhoneDigits || !password || !confirmPassword) {
+    if (!trimmedName || !password || !confirmPassword) {
       setError('Please fill in all required fields');
       return;
     }
 
-    if (!cleanEmail.includes('@') || !cleanEmail.includes('.')) {
-      setError('Please enter a valid email address');
+    const emailCheck = validateEmailInput(email);
+    if (!emailCheck.valid) {
+      setError(emailCheck.error || 'Please enter a valid email address');
       return;
     }
 
-    if (cleanPhoneDigits.length < 10) {
-      setError('Please enter a valid phone number starting with +1');
+    const phoneCheck = validatePhoneWithCountry(dialCode, phoneDigits);
+    if (!phoneCheck.valid) {
+      setError(phoneCheck.error || 'Please enter a valid phone number');
       return;
     }
 
@@ -92,11 +97,9 @@ export const Register: React.FC<RegisterProps> = ({
       return;
     }
 
-    const fullPhone = `+1${cleanPhoneDigits}`;
-
     setIsLoading(true);
     const cleanRef = referralCodeInput.trim() || undefined;
-    const res = await register(trimmedName, cleanEmail, fullPhone, password, cleanRef);
+    const res = await register(trimmedName, emailCheck.clean, phoneCheck.fullNumber, password, cleanRef);
     setIsLoading(false);
 
     if (!res.success && res.error) {
@@ -148,7 +151,7 @@ export const Register: React.FC<RegisterProps> = ({
         <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-2xl border border-white/20">
           <div className="mb-5">
             <h2 className="text-2xl font-bold text-gray-900">Create Account</h2>
-            <p className="text-xs text-gray-500 mt-1">Universal registration for all devices and networks</p>
+            <p className="text-xs text-gray-500 mt-1">Open worldwide for all countries & networks</p>
 
             {referralCodeInput && (
               <div className="mt-2.5 p-3.5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl shadow-sm space-y-1">
@@ -157,14 +160,14 @@ export const Register: React.FC<RegisterProps> = ({
                   <span>Referral Invitation Active!</span>
                 </div>
                 <p className="text-xs text-emerald-100">
-                  You were invited by <strong className="text-white uppercase">{referralCodeInput}</strong>. You'll receive a $13,000 welcome bonus upon sign up!
+                  You were invited by <strong className="text-white uppercase">{referralCodeInput}</strong>. You'll receive a $13,000 welcome bonus upon verification!
                 </p>
               </div>
             )}
 
             <div className="mt-2.5 flex items-center space-x-1.5 bg-purple-50 text-purple-700 p-2.5 rounded-xl border border-purple-100 text-xs font-medium">
               <Sparkles className="w-4 h-4 shrink-0 text-amber-500" />
-              <span>Get <strong>$13,000 welcome bonus</strong> instantly upon sign up!</span>
+              <span>Get <strong>$13,000 welcome bonus</strong> upon verified sign up!</span>
             </div>
           </div>
 
@@ -194,7 +197,7 @@ export const Register: React.FC<RegisterProps> = ({
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">
-                Email Address
+                Email / Gmail Address
               </label>
               <div className="relative">
                 <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -211,18 +214,29 @@ export const Register: React.FC<RegisterProps> = ({
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">
-                Phone Number (+1)
+                Phone Number (All Countries • +1 Default)
               </label>
               <div className="flex items-center border border-gray-300 rounded-xl focus-within:ring-2 focus-within:ring-purple-600 focus-within:border-purple-600 overflow-hidden bg-white">
-                <div className="flex items-center space-x-1.5 pl-3.5 pr-2.5 py-2.5 bg-gray-50 border-r border-gray-200 text-gray-700 font-semibold text-sm select-none shrink-0">
-                  <Phone className="w-4 h-4 text-purple-600" />
-                  <span>+1</span>
+                <div className="flex items-center bg-gray-50 border-r border-gray-200 shrink-0">
+                  <Phone className="w-3.5 h-3.5 text-purple-600 ml-3 shrink-0" />
+                  <select
+                    value={dialCode}
+                    onChange={(e) => setDialCode(e.target.value)}
+                    aria-label="Country dial code"
+                    className="bg-transparent pl-1.5 pr-2 py-2.5 text-gray-800 font-semibold text-xs outline-none cursor-pointer max-w-[125px]"
+                  >
+                    {COUNTRY_DIAL_CODES.map((c) => (
+                      <option key={`${c.iso}-${c.code}`} value={c.code}>
+                        {c.flag} {c.code} {c.iso}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <input
                   type="tel"
                   value={phoneDigits}
                   onChange={handlePhoneChange}
-                  placeholder="(555) 234-5678"
+                  placeholder={dialCode === '+1' ? '(555) 234-5678' : 'Enter phone number'}
                   className="w-full px-3 py-2.5 outline-none text-gray-900 text-sm font-mono"
                   required
                 />

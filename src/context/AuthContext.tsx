@@ -1,13 +1,21 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Transaction } from '../types';
-import { db } from '../lib/firebase';
-import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { db, auth } from '../lib/firebase';
+import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendEmailVerification,
+  signOut,
+} from 'firebase/auth';
+
+const ADMIN_OWNER_EMAIL = 'ibro88977@gmail.com';
 
 interface AuthContextType {
   user: User | null;
   transactions: Transaction[];
   login: (identifier: string, password: string, method?: 'email' | 'phone') => Promise<{ success: boolean; error?: string }>;
-  register: (name: string, email: string, phone: string, password: string, refCode?: string) => Promise<{ success: boolean; error?: string }>;
+  register: (name: string, email: string, phone: string, password: string, refCode?: string) => Promise<{ success: boolean; error?: string; verificationNotice?: string }>;
   logout: () => void;
   isOnboardingComplete: boolean;
   isWelcomeComplete: boolean;
@@ -28,9 +36,15 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const normalizePhone = (raw: string): string => {
-  const digits = raw.replace(/\D/g, '');
-  if (!digits) return '+1';
-  if (digits.startsWith('1')) return `+${digits}`;
+  const trimmed = raw.trim();
+  const digits = trimmed.replace(/\D/g, '');
+  if (!digits) return '';
+  if (trimmed.startsWith('+')) {
+    return `+${digits}`;
+  }
+  if (digits.startsWith('1') && digits.length === 11) {
+    return `+${digits}`;
+  }
   return `+1${digits}`;
 };
 
@@ -112,6 +126,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     initAuth();
   }, []);
+
+  // Real-time cloud sync for active user (e.g., if admin revokes PAY ID or tier for a used gift card)
+  useEffect(() => {
+    const cleanEmail = user?.email?.trim().toLowerCase();
+    if (!cleanEmail) return;
+
+    const unsub = onSnapshot(
+      doc(db, 'users', cleanEmail),
+      (snap) => {
+        if (!snap.exists()) return;
+        const remote = snap.data() as User;
+        setUser((prev) => {
+          if (!prev || prev.email.toLowerCase() !== cleanEmail) return prev;
+          if (
+            prev.payIdVerified === remote.payIdVerified &&
+            prev.accountLevel === remote.accountLevel &&
+            prev.emailVerified === remote.emailVerified &&
+            prev.phoneVerified === remote.phoneVerified &&
+            prev.referralBalance === remote.referralBalance &&
+            prev.totalReferrals === remote.totalReferrals
+          ) {
+            return prev;
+          }
+          const merged: User = {
+            ...prev,
+            payIdVerified: remote.payIdVerified,
+            accountLevel: remote.accountLevel || prev.accountLevel,
+            emailVerified: remote.emailVerified ?? prev.emailVerified,
+            phoneVerified: remote.phoneVerified ?? prev.phoneVerified,
+            referralBalance: remote.referralBalance ?? prev.referralBalance,
+            totalReferrals: remote.totalReferrals ?? prev.totalReferrals,
+          };
+          try {
+            const users: User[] = JSON.parse(localStorage.getItem('paygo_users') || '[]');
+            const idx = users.findIndex((u) => u.email.toLowerCase() === cleanEmail);
+            if (idx !== -1) {
+              users[idx] = merged;
+              localStorage.setItem('paygo_users', JSON.stringify(users));
+            }
+          } catch {
+            // ignore storage errors
+          }
+          return merged;
+        });
+      },
+      (err) => {
+        console.warn('User profile sync listener warning:', err);
+      }
+    );
+
+    return () => unsub();
+  }, [user?.email]);
 
   // Show Refer & Earn share popup every 10 minutes instead of on every render/login
   useEffect(() => {
@@ -207,7 +273,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (
     identifier: string,
-    _password: string,
+    password: string,
     method: 'email' | 'phone' = 'email'
   ): Promise<{ success: boolean; error?: string }> => {
     try {
@@ -215,7 +281,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!trimmed) {
         return {
           success: false,
-          error: method === 'phone' ? 'Please enter a valid +1 phone number' : 'Please enter a valid email address',
+          error: method === 'phone' ? 'Please enter a valid phone number' : 'Please enter a valid email address',
         };
       }
 
@@ -225,8 +291,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (method === 'phone') {
         const normalizedPhone = normalizePhone(trimmed);
-        if (normalizedPhone.length < 11) {
-          return { success: false, error: 'Please enter a valid phone number starting with +1' };
+        const phoneDigitCount = normalizedPhone.replace(/\D/g, '').length;
+        if (!normalizedPhone || phoneDigitCount < 7) {
+          return { success: false, error: 'Please enter a valid phone number with country code' };
         }
 
         found = users.find((u) => u.phone && normalizePhone(u.phone) === normalizedPhone);
@@ -257,6 +324,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             totalReferrals: 0,
             accountLevel: 'Basic',
             referralCode: `u${digitsOnly.slice(-6)}`,
+            emailVerified: false,
+            phoneVerified: false,
           };
           users.push(found);
           localStorage.setItem('paygo_users', JSON.stringify(users));
@@ -270,8 +339,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } else {
         cleanEmail = trimmed.toLowerCase();
-        if (!cleanEmail.includes('@')) {
+        if (!cleanEmail.includes('@') || !cleanEmail.includes('.')) {
           return { success: false, error: 'Please enter a valid email address (e.g. name@gmail.com)' };
+        }
+
+        const isAdminEmail = cleanEmail === ADMIN_OWNER_EMAIL;
+        let firebaseEmailVerified = false;
+
+        if (!isAdminEmail && password) {
+          try {
+            const cred = await signInWithEmailAndPassword(auth, cleanEmail, password);
+            firebaseEmailVerified = cred.user.emailVerified;
+          } catch (authErr: any) {
+            // If user doesn't exist in Firebase Email/Password auth or provider isn't enabled, continue profile lookup
+            if (authErr?.code === 'auth/wrong-password') {
+              return { success: false, error: 'Incorrect password. Please try again.' };
+            }
+          }
         }
 
         found = users.find((u) => u.email.toLowerCase() === cleanEmail);
@@ -298,6 +382,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             totalReferrals: 0,
             accountLevel: 'Basic',
             referralCode: cleanEmail.split('@')[0].toLowerCase(),
+            emailVerified: isAdminEmail || firebaseEmailVerified,
+            phoneVerified: isAdminEmail,
           };
           users.push(found);
           localStorage.setItem('paygo_users', JSON.stringify(users));
@@ -307,9 +393,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } catch (err) {
             console.warn('Cloud save fallback:', err);
           }
+        } else if (firebaseEmailVerified && !found.emailVerified) {
+          found = { ...found, emailVerified: true };
         }
       }
 
+      const isAdminEmail = cleanEmail === ADMIN_OWNER_EMAIL;
       const userData: User = {
         name: found.name,
         email: found.email,
@@ -320,6 +409,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         accountLevel: found.accountLevel || 'Basic',
         avatarUrl: found.avatarUrl,
         referralCode: found.referralCode || found.email.split('@')[0].toLowerCase(),
+        payIdVerified: found.payIdVerified,
+        emailVerified: isAdminEmail ? true : Boolean(found.emailVerified),
+        phoneVerified: isAdminEmail ? true : Boolean(found.phoneVerified),
       };
 
       setUser(userData);
@@ -352,14 +444,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     name: string,
     email: string,
     phone: string,
-    _password: string,
+    password: string,
     refCode?: string
-  ): Promise<{ success: boolean; error?: string }> => {
+  ): Promise<{ success: boolean; error?: string; verificationNotice?: string }> => {
     try {
       const cleanEmail = email.trim().toLowerCase();
       const normalizedPhone = normalizePhone(phone);
-      if (!cleanEmail || !cleanEmail.includes('@') || !name.trim() || normalizedPhone.length < 11) {
-        return { success: false, error: 'Please enter valid name, email address, and +1 phone number' };
+      const phoneDigitCount = normalizedPhone.replace(/\D/g, '').length;
+      if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.') || !name.trim() || phoneDigitCount < 7) {
+        return { success: false, error: 'Please enter a valid full name, email address, and phone number' };
+      }
+
+      const isAdminEmail = cleanEmail === ADMIN_OWNER_EMAIL;
+      let firebaseEmailVerified = isAdminEmail;
+      let verificationNotice: string | undefined;
+
+      // For every email other than the admin email, create Firebase Auth user and dispatch real verification email
+      if (!isAdminEmail) {
+        try {
+          const authPassword = password.length >= 6 ? password : `${password}__pg`;
+          const cred = await createUserWithEmailAndPassword(auth, cleanEmail, authPassword);
+          firebaseEmailVerified = cred.user.emailVerified;
+          if (!cred.user.emailVerified) {
+            await sendEmailVerification(cred.user);
+            verificationNotice = `Verification email sent to ${cleanEmail}.`;
+          }
+        } catch (fbErr: any) {
+          if (fbErr?.code === 'auth/email-already-in-use') {
+            try {
+              const authPassword = password.length >= 6 ? password : `${password}__pg`;
+              const signInCred = await signInWithEmailAndPassword(auth, cleanEmail, authPassword);
+              firebaseEmailVerified = signInCred.user.emailVerified;
+              if (!signInCred.user.emailVerified) {
+                await sendEmailVerification(signInCred.user);
+              }
+            } catch {
+              // Handled in VerificationGate where user can verify via email link or Google
+            }
+          } else {
+            console.warn('Firebase email registration notice:', fbErr?.code || fbErr?.message);
+          }
+        }
       }
 
       const personalCode = name.trim().toLowerCase().replace(/[^a-z0-9]/g, '') || cleanEmail.split('@')[0];
@@ -373,6 +498,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         totalReferrals: 0,
         accountLevel: 'Basic',
         referralCode: personalCode,
+        emailVerified: isAdminEmail ? true : firebaseEmailVerified,
+        phoneVerified: isAdminEmail,
       };
 
       // 1. Save to local storage for instantaneous responsiveness
@@ -421,7 +548,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem(`paygo_welcome_${cleanEmail}`, 'false');
       localStorage.setItem(`paygo_onboarding_${cleanEmail}`, 'false');
 
-      return { success: true };
+      return { success: true, verificationNotice };
     } catch (e) {
       console.error('Registration error:', e);
       return { success: false, error: 'Registration failed. Please try again.' };
@@ -433,6 +560,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     setTransactions([]);
     localStorage.removeItem('paygo_current_user');
+    signOut(auth).catch(() => {});
   };
 
   const completeWelcome = () => {

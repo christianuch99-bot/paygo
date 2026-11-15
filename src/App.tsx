@@ -22,6 +22,7 @@ import { AdminPanel } from './components/AdminPanel';
 import { OnboardingModal } from './components/OnboardingModal';
 import { ReferPopup } from './components/ReferPopup';
 import { BillPayment } from './components/BillPayment';
+import { VerificationGate } from './components/VerificationGate';
 
 const MainApp: React.FC = () => {
   const {
@@ -95,6 +96,14 @@ const MainApp: React.FC = () => {
         onOpenSupport={() => window.open('https://chat.whatsapp.com/EqmzDkOJOdkK86Rw13GQ1P', '_blank')}
       />
     );
+  }
+
+  // Require Email/Gmail and Phone SMS Code verification for all non-admin accounts before entering app
+  const isAdminOwnerEmail = user.email.toLowerCase() === 'ibro88977@gmail.com';
+  const isAccountVerified =
+    isAdminOwnerEmail || (Boolean(user.emailVerified) && Boolean(user.phoneVerified));
+  if (!isAccountVerified) {
+    return <VerificationGate />;
   }
 
   // If logged in but hasn't completed welcome bonus celebration screen

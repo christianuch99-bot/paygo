@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { HelpCircle, Eye, EyeOff, Lock, Mail, Phone, ArrowRight } from 'lucide-react';
+import {
+  COUNTRY_DIAL_CODES,
+  validateEmailInput,
+  validatePhoneWithCountry,
+} from '../data/countryCodes';
 
 interface LoginProps {
   onSwitchToRegister: () => void;
@@ -10,6 +15,7 @@ interface LoginProps {
 export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport }) => {
   const [loginMethod, setLoginMethod] = useState<'email' | 'phone'>('email');
   const [email, setEmail] = useState('');
+  const [dialCode, setDialCode] = useState('+1');
   const [phoneDigits, setPhoneDigits] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -19,7 +25,7 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport 
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let digits = e.target.value.replace(/\D/g, '');
-    if (digits.startsWith('1') && digits.length > 10) {
+    if (dialCode === '+1' && digits.startsWith('1') && digits.length > 10) {
       digits = digits.slice(1);
     }
     setPhoneDigits(digits.slice(0, 14));
@@ -35,25 +41,25 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport 
     }
 
     if (loginMethod === 'email') {
-      const cleanEmail = email.trim().toLowerCase();
-      if (!cleanEmail || !cleanEmail.includes('@')) {
-        setError('Please enter a valid email address');
+      const emailCheck = validateEmailInput(email);
+      if (!emailCheck.valid) {
+        setError(emailCheck.error || 'Please enter a valid email address');
         return;
       }
       setIsLoading(true);
-      const res = await login(cleanEmail, password, 'email');
+      const res = await login(emailCheck.clean, password, 'email');
       setIsLoading(false);
       if (!res.success && res.error) {
         setError(res.error);
       }
     } else {
-      const cleanDigits = phoneDigits.replace(/\D/g, '');
-      if (cleanDigits.length < 10) {
-        setError('Please enter a valid phone number starting with +1');
+      const phoneCheck = validatePhoneWithCountry(dialCode, phoneDigits);
+      if (!phoneCheck.valid) {
+        setError(phoneCheck.error || 'Please enter a valid phone number');
         return;
       }
       setIsLoading(true);
-      const res = await login(`+1${cleanDigits}`, password, 'phone');
+      const res = await login(phoneCheck.fullNumber, password, 'phone');
       setIsLoading(false);
       if (!res.success && res.error) {
         setError(res.error);
@@ -88,7 +94,7 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport 
         <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-2xl border border-white/20">
           <div className="mb-5">
             <h2 className="text-2xl font-bold text-gray-900">Login to continue</h2>
-            <p className="text-sm text-gray-500 mt-1">Access your PayGo account and wallet balance across devices</p>
+            <p className="text-sm text-gray-500 mt-1">Available in all countries worldwide (+1 default)</p>
           </div>
 
           {/* Separate Email / Phone Login Toggle */}
@@ -121,7 +127,7 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport 
               }`}
             >
               <Phone className="w-3.5 h-3.5 text-purple-600" />
-              <span>Phone (+1)</span>
+              <span>Phone Number</span>
             </button>
           </div>
 
@@ -135,7 +141,7 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport 
             {loginMethod === 'email' ? (
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">
-                  Email Address
+                  Email / Gmail Address
                 </label>
                 <div className="relative">
                   <Mail className="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -152,18 +158,29 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport 
             ) : (
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">
-                  Phone Number (+1)
+                  Phone Number (All Countries • +1 Default)
                 </label>
                 <div className="flex items-center border border-gray-300 rounded-xl focus-within:ring-2 focus-within:ring-purple-600 focus-within:border-purple-600 overflow-hidden bg-white">
-                  <div className="flex items-center space-x-1.5 pl-3.5 pr-3 py-3 bg-gray-50 border-r border-gray-200 text-gray-700 font-semibold text-sm select-none shrink-0">
-                    <Phone className="w-4 h-4 text-purple-600" />
-                    <span>+1</span>
+                  <div className="flex items-center bg-gray-50 border-r border-gray-200 shrink-0">
+                    <Phone className="w-4 h-4 text-purple-600 ml-3 shrink-0" />
+                    <select
+                      value={dialCode}
+                      onChange={(e) => setDialCode(e.target.value)}
+                      aria-label="Country dial code"
+                      className="bg-transparent pl-1.5 pr-2 py-3 text-gray-800 font-semibold text-xs outline-none cursor-pointer max-w-[125px]"
+                    >
+                      {COUNTRY_DIAL_CODES.map((c) => (
+                        <option key={`${c.iso}-${c.code}`} value={c.code}>
+                          {c.flag} {c.code} {c.iso}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <input
                     type="tel"
                     value={phoneDigits}
                     onChange={handlePhoneChange}
-                    placeholder="(555) 234-5678"
+                    placeholder={dialCode === '+1' ? '(555) 234-5678' : 'Enter phone number'}
                     className="w-full px-3.5 py-3 outline-none text-gray-900 text-sm font-mono"
                     required
                   />

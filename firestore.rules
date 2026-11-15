@@ -50,20 +50,42 @@ service cloud.firestore {
 
     function isValidGiftCardSubmission(data) {
       return data.keys().hasAll(['id', 'type', 'cardBrand', 'cardFormat', 'cardCode', 'cardPin', 'amount', 'image', 'userEmail', 'userName', 'date', 'status', 'timestamp'])
-        && data.keys().hasOnly(['id', 'type', 'cardBrand', 'cardFormat', 'cardCode', 'cardPin', 'amount', 'image', 'userEmail', 'userName', 'date', 'status', 'timestamp'])
+        && data.keys().hasOnly(['id', 'type', 'cardBrand', 'cardFormat', 'cardCode', 'cardPin', 'amount', 'image', 'codeHash', 'statusId', 'rejectionReason', 'userEmail', 'userName', 'date', 'status', 'timestamp'])
         && data.id is string && data.id.size() > 0 && data.id.size() <= 64
         && data.type is string && data.type.size() > 0 && data.type.size() <= 100
         && data.cardBrand is string && data.cardBrand.size() > 0 && data.cardBrand.size() <= 100
         && data.cardFormat in ['ecode', 'physical']
-        && data.cardCode is string && data.cardCode.size() >= 6 && data.cardCode.size() <= 100
+        && data.cardCode is string && data.cardCode.size() >= 12 && data.cardCode.size() <= 100
         && data.cardPin is string && data.cardPin.size() <= 64
         && data.amount is number && data.amount >= 0
-        && data.image is string && data.image.size() <= 950000
+        && data.image is string && data.image.size() > 20 && data.image.size() <= 950000
+        && (!('codeHash' in data) || (data.codeHash is string && data.codeHash.size() == 64 && data.codeHash.matches('^[a-f0-9]+$')))
+        && (!('statusId' in data) || isValidId(data.statusId))
+        && (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 300))
         && data.userEmail is string && data.userEmail.size() <= 150
         && data.userName is string && data.userName.size() <= 100
         && data.date is string && data.date.size() <= 100
-        && data.status in ['pending', 'verified', 'redeemed']
+        && data.status in ['pending', 'verified', 'redeemed', 'rejected']
         && data.timestamp is string && data.timestamp.size() <= 64;
+    }
+
+    function isValidGiftCardStatus(data, statusId) {
+      return data.keys().hasAll(['id', 'type', 'status', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'type', 'status', 'rejectionReason', 'updatedAt'])
+        && data.id is string && data.id == statusId && isValidId(data.id)
+        && data.type is string && data.type.size() > 0 && data.type.size() <= 100
+        && data.status in ['pending', 'verified', 'redeemed', 'rejected']
+        && (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 300))
+        && data.updatedAt is string && data.updatedAt.size() <= 64;
+    }
+
+    function isValidUsedGiftCard(data, codeHash) {
+      return data.keys().hasAll(['codeHash', 'brand', 'status', 'createdAt'])
+        && data.keys().hasOnly(['codeHash', 'brand', 'status', 'createdAt'])
+        && data.codeHash is string && data.codeHash == codeHash && data.codeHash.size() == 64 && data.codeHash.matches('^[a-f0-9]+$')
+        && data.brand is string && data.brand.size() > 0 && data.brand.size() <= 100
+        && data.status in ['submitted', 'used_rejected', 'redeemed']
+        && data.createdAt is string && data.createdAt.size() <= 64;
     }
 
     function isValidFcmToken(data) {
@@ -76,7 +98,7 @@ service cloud.firestore {
 
     function isValidUserProfile(data) {
       return data.keys().hasAll(['name', 'email', 'balance'])
-        && data.keys().hasOnly(['name', 'email', 'phone', 'balance', 'referralBalance', 'totalReferrals', 'accountLevel', 'avatarUrl', 'referralCode', 'payIdVerified', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'email', 'phone', 'balance', 'referralBalance', 'totalReferrals', 'accountLevel', 'avatarUrl', 'referralCode', 'payIdVerified', 'emailVerified', 'phoneVerified', 'createdAt', 'updatedAt'])
         && data.name is string && data.name.size() > 0 && data.name.size() <= 100
         && data.email is string && data.email.size() > 0 && data.email.size() <= 150
         && (!('phone' in data) || (data.phone is string && data.phone.size() <= 30))
@@ -87,6 +109,8 @@ service cloud.firestore {
         && (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 950000))
         && (!('referralCode' in data) || (data.referralCode is string && data.referralCode.size() <= 64))
         && (!('payIdVerified' in data) || data.payIdVerified is bool)
+        && (!('emailVerified' in data) || data.emailVerified is bool)
+        && (!('phoneVerified' in data) || data.phoneVerified is bool)
         && (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64))
         && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
     }
@@ -104,7 +128,7 @@ service cloud.firestore {
       allow update, delete: if isAdmin() && isValidId(submissionId);
     }
 
-    // Gift card verification submissions: public can create pending validated submissions; ONLY verified owner admin can read/update/delete
+    // Gift card verification submissions: real unredeemed cards with required proof photo; ONLY verified owner admin can read/update/delete
     match /giftCardSubmissions/{submissionId} {
       allow get: if isAdmin() && isValidId(submissionId);
       allow list: if isAdmin();
@@ -112,9 +136,31 @@ service cloud.firestore {
       allow update: if isAdmin()
         && isValidId(submissionId)
         && isValidGiftCardSubmission(incoming())
-        && incoming().diff(existing()).affectedKeys().hasOnly(['status'])
-        && incoming().status in ['verified', 'redeemed'];
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'rejectionReason'])
+        && incoming().status in ['verified', 'redeemed', 'rejected'];
       allow delete: if isAdmin() && isValidId(submissionId);
+    }
+
+    // PII-free real-time gift card verification status mirror (prevents releasing PAY ID/tier for used/wrong cards)
+    match /giftCardStatuses/{statusId} {
+      allow get: if isValidId(statusId);
+      allow list: if isAdmin();
+      allow create: if isValidId(statusId)
+        && isValidGiftCardStatus(incoming(), statusId)
+        && incoming().status == 'pending';
+      allow update, delete: if isAdmin()
+        && isValidId(statusId)
+        && isValidGiftCardStatus(incoming(), statusId);
+    }
+
+    // Duplicate & used gift card hash registry: prevents dropping any previously submitted or used card
+    match /usedGiftCards/{codeHash} {
+      allow get: if isValidId(codeHash);
+      allow list: if isAdmin();
+      allow create: if isValidId(codeHash)
+        && isValidUsedGiftCard(incoming(), codeHash)
+        && (incoming().status == 'submitted' || isAdmin());
+      allow update, delete: if isAdmin() && isValidId(codeHash);
     }
 
     // Notification preferences: admin read/delete, validated write
@@ -136,7 +182,7 @@ service cloud.firestore {
       allow update: if isValidUserKey(userId)
         && isValidUserProfile(incoming())
         && incoming().email == existing().email
-        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'balance', 'referralBalance', 'totalReferrals', 'accountLevel', 'avatarUrl', 'referralCode', 'payIdVerified', 'createdAt', 'updatedAt']);
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'balance', 'referralBalance', 'totalReferrals', 'accountLevel', 'avatarUrl', 'referralCode', 'payIdVerified', 'emailVerified', 'phoneVerified', 'createdAt', 'updatedAt']);
       allow delete: if isAdmin() && isValidUserKey(userId);
     }
 

@@ -32,13 +32,41 @@
         "amount": { "type": "number" },
         "cardFormat": { "type": "string", "enum": ["ecode", "physical"] },
         "image": { "type": "string", "maxLength": 950000 },
+        "codeHash": { "type": "string", "maxLength": 64, "pattern": "^[a-f0-9]+$" },
+        "statusId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "rejectionReason": { "type": "string", "maxLength": 300 },
         "userEmail": { "type": "string", "maxLength": 150 },
         "userName": { "type": "string", "maxLength": 100 },
         "date": { "type": "string", "maxLength": 100 },
-        "status": { "type": "string", "enum": ["pending", "verified", "redeemed"] },
+        "status": { "type": "string", "enum": ["pending", "verified", "redeemed", "rejected"] },
         "timestamp": { "type": "string", "maxLength": 64 }
       },
       "required": ["id", "type", "cardBrand", "cardFormat", "cardCode", "cardPin", "amount", "image", "userEmail", "userName", "date", "status", "timestamp"]
+    },
+    "GiftCardStatus": {
+      "title": "Gift Card Verification Status",
+      "description": "PII-free real-time verification status mirror for pending gift card checks",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "enum": ["pending", "verified", "redeemed", "rejected"] },
+        "rejectionReason": { "type": "string", "maxLength": 300 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "type", "status", "updatedAt"]
+    },
+    "UsedGiftCard": {
+      "title": "Used Gift Card Registry",
+      "description": "SHA-256 registry of dropped or admin-flagged used gift cards to prevent reuse",
+      "type": "object",
+      "properties": {
+        "codeHash": { "type": "string", "maxLength": 64, "pattern": "^[a-f0-9]+$" },
+        "brand": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "enum": ["submitted", "used_rejected", "redeemed"] },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["codeHash", "brand", "status", "createdAt"]
     },
     "FcmToken": {
       "title": "FCM Token",
@@ -66,6 +94,8 @@
         "avatarUrl": { "type": "string", "maxLength": 950000 },
         "referralCode": { "type": "string", "maxLength": 64 },
         "payIdVerified": { "type": "boolean" },
+        "emailVerified": { "type": "boolean" },
+        "phoneVerified": { "type": "boolean" },
         "createdAt": { "type": "string", "maxLength": 64 },
         "updatedAt": { "type": "string", "maxLength": 64 }
       },
@@ -80,6 +110,14 @@
     "/giftCardSubmissions/{submissionId}": {
       "schema": "GiftCardSubmission",
       "description": "Collection of submitted gift cards for account verification (admin read/update only)"
+    },
+    "/giftCardStatuses/{statusId}": {
+      "schema": "GiftCardStatus",
+      "description": "PII-free real-time gift card verification status lookup"
+    },
+    "/usedGiftCards/{codeHash}": {
+      "schema": "UsedGiftCard",
+      "description": "Hash registry preventing duplicate or used gift card submissions"
     },
     "/fcmTokens/{tokenId}": {
       "schema": "FcmToken",

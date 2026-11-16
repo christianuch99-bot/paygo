@@ -24,8 +24,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
     },
     {
       icon: <Smartphone className="w-12 h-12 text-green-600" />,
-      title: "Airtime & Data",
-      description: "You can purchase airtime and data for all major networks directly from the app. Simply select the service, enter the phone number, choose your plan, and complete your purchase."
+      title: "Utility & Services",
+      description: "You can purchase electricity, internet, and other utility services directly from the app. Simply select the service, enter your account details, and complete your payment."
     },
     {
       icon: <ArrowDownToLine className="w-12 h-12 text-red-500" />,

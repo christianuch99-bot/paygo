@@ -27,14 +27,6 @@ interface BillCategory {
 
 const BILL_CATEGORIES: BillCategory[] = [
   {
-    id: 'airtime',
-    label: 'Airtime & Data',
-    icon: <Smartphone className="w-5 h-5 text-purple-600" />,
-    accountLabel: 'Phone Number (+1)',
-    accountPlaceholder: '+1 555 234 5678',
-    providers: ['AT&T Wireless', 'T-Mobile US', 'Verizon Mobile', 'Global eSIM Data'],
-  },
-  {
     id: 'electricity',
     label: 'Electricity',
     icon: <Zap className="w-5 h-5 text-amber-500" />,
@@ -238,7 +230,7 @@ Processed by PayGo Bill Pay
           </button>
           <div>
             <h1 className="text-lg font-bold">Pay Bills</h1>
-            <p className="text-xs text-purple-200">Instant utility, airtime & subscription payments</p>
+            <p className="text-xs text-purple-200">Instant utility & subscription payments</p>
           </div>
         </div>
       </div>

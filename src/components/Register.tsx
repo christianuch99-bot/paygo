@@ -347,11 +347,7 @@ export const Register: React.FC<RegisterProps> = ({
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
-                  <span>
-                    {registerMethod === 'phone'
-                      ? 'Continue to Phone OTP Verification'
-                      : 'Continue to Email OTP Verification'}
-                  </span>
+                  <span>Create Account</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}

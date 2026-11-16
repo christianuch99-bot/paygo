@@ -22,7 +22,6 @@ import { AdminPanel } from './components/AdminPanel';
 import { OnboardingModal } from './components/OnboardingModal';
 import { ReferPopup } from './components/ReferPopup';
 import { BillPayment } from './components/BillPayment';
-import { VerificationGate } from './components/VerificationGate';
 
 const MainApp: React.FC = () => {
   const {
@@ -98,16 +97,6 @@ const MainApp: React.FC = () => {
     );
   }
 
-  // Require verification for the chosen account method (Email/Gmail OR Phone SMS OTP), exempting admin Gmail
-  const isAdminOwnerEmail = user.email.toLowerCase() === 'ibro88977@gmail.com';
-  const isPhoneAccount =
-    user.authMethod === 'phone' || user.email.toLowerCase().endsWith('@phone.paygo.com');
-  const isAccountVerified =
-    isAdminOwnerEmail ||
-    (isPhoneAccount ? Boolean(user.phoneVerified) : Boolean(user.emailVerified));
-  if (!isAccountVerified) {
-    return <VerificationGate />;
-  }
 
   // If logged in but hasn't completed welcome bonus celebration screen
   if (!isWelcomeComplete) {

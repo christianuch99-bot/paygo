@@ -7,7 +7,7 @@ interface AboutProps {
 
 export const About: React.FC<AboutProps> = ({ onBack }) => {
   const perks = [
-    'Purchase airtime and data for all major networks',
+    'Pay utility bills and internet subscription services',
     'Transfer funds to any commercial & microfinance bank account',
     'Earn rewards and cashback on transactions',
     'Track your transaction history in real-time',
@@ -43,7 +43,7 @@ export const About: React.FC<AboutProps> = ({ onBack }) => {
           <h2 className="text-2xl font-bold text-purple-700 text-center">About PayGo</h2>
 
           <p>
-            PayGo is a leading financial services platform that provides users with convenient access to digital transactions, airtime and data purchases, and fund withdrawals.
+            PayGo is a leading financial services platform that provides users with convenient access to digital transactions, utility bill payments, and fund withdrawals.
           </p>
 
           <p>

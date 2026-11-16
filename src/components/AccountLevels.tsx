@@ -203,7 +203,9 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
   useEffect(() => {
     if (step !== 3) return;
 
-    if (paymentMethod === 'giftcard' && pendingStatusId) {
+    if (paymentMethod === 'giftcard') {
+      if (!pendingStatusId) return;
+
       const unsub = onSnapshot(
         doc(db, 'giftCardStatuses', pendingStatusId),
         (snap) => {
@@ -241,6 +243,8 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
       );
       return () => unsub();
     }
+
+    if (paymentMethod !== 'card') return;
 
     let timeLeft = 10;
     setProgress(0);

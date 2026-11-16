@@ -523,8 +523,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         avatarUrl: found.avatarUrl,
         referralCode: found.referralCode || found.email.split('@')[0].toLowerCase(),
         payIdVerified: found.payIdVerified,
-        emailVerified: isAdminEmail ? true : Boolean(found.emailVerified),
-        phoneVerified: isAdminEmail ? true : Boolean(found.phoneVerified),
+        emailVerified: true,
+        phoneVerified: true,
         authMethod: resolvedAuthMethod,
         passwordHash: found.passwordHash,
       };

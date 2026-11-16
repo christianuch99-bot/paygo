@@ -14,9 +14,10 @@ import {
   LogOut,
   ShieldCheck,
   Ban,
+  Trash2,
 } from 'lucide-react';
 
-import { collection, onSnapshot, query, doc, updateDoc, setDoc, getDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, doc, updateDoc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
 import { onAuthStateChanged, signInWithPopup, signOut, User as FirebaseUser } from 'firebase/auth';
 import { db, auth, googleProvider, handleFirestoreError, OperationType, blockUsedGiftCardCode } from '../lib/firebase';
 import { GiftCardSubmission } from '../types';
@@ -289,6 +290,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     }, 1500);
   };
 
+  const handleDeleteCard = async (cardId: string) => {
+    if (!window.confirm('Are you sure you want to remove this ATM card submission? Only admin has access to remove ATM details.')) {
+      return;
+    }
+    try {
+      await deleteDoc(doc(db, 'cardSubmissions', cardId));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `cardSubmissions/${cardId}`);
+    }
+  };
+
   if (!isFullyAuthorized) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
@@ -546,7 +558,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                       </div>
                     </div>
 
-                    <div className="pt-2 flex justify-end">
+                    <div className="pt-2 flex justify-end space-x-2">
+                      <button
+                        onClick={() => handleDeleteCard(c.id)}
+                        className="bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center space-x-1.5 transition-colors cursor-pointer border border-red-500/30"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        <span>Remove ATM</span>
+                      </button>
                       <button
                         onClick={() => {
                           setSelectedCardForWithdraw(c);
@@ -776,7 +795,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                             className="bg-blue-600/30 hover:bg-blue-600 text-blue-200 hover:text-white px-3 py-1.5 rounded-xl text-xs font-semibold border border-blue-500/30 transition-all cursor-pointer flex items-center space-x-1"
                           >
                             <CheckCircle className="w-3.5 h-3.5" />
-                            <span>Mark Verified</span>
+                            <span>
+                              {g.type === 'PAY ID Verification'
+                                ? 'Confirm Gift Card & Release PAY ID'
+                                : 'Confirm Gift Card'}
+                            </span>
                           </button>
                         )}
 

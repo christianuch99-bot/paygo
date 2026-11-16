@@ -73,7 +73,7 @@ export const PromotionsCarousel: React.FC<PromotionsCarouselProps> = ({ onNaviga
   return (
     <div className="mt-2">
       <div className="flex items-center justify-between mb-3 px-1">
-        <h3 className="text-base font-bold text-gray-900">Current Promotions</h3>
+        <h3 className="text-base font-bold text-white">Current Promotions</h3>
         <div className="flex items-center space-x-1.5">
           {PROMOS.map((promo, idx) => (
             <button
@@ -85,7 +85,7 @@ export const PromotionsCarousel: React.FC<PromotionsCarouselProps> = ({ onNaviga
             >
               <span
                 className={`block h-2 rounded-full transition-all ${
-                  idx === currentIndex ? 'w-6 bg-purple-600' : 'w-2 bg-gray-300'
+                  idx === currentIndex ? 'w-6 bg-amber-400' : 'w-2 bg-white/25'
                 }`}
               />
             </button>
@@ -93,7 +93,7 @@ export const PromotionsCarousel: React.FC<PromotionsCarouselProps> = ({ onNaviga
         </div>
       </div>
 
-      <div className="relative rounded-2xl overflow-hidden shadow-md group h-[220px] sm:h-[250px] bg-gray-900">
+      <div className="relative rounded-2xl overflow-hidden shadow-2xl shadow-black/40 border border-white/10 group h-[220px] sm:h-[250px] bg-slate-900">
         {PROMOS.map((item, index) => (
           <div
             key={item.title}
@@ -125,7 +125,7 @@ export const PromotionsCarousel: React.FC<PromotionsCarouselProps> = ({ onNaviga
                   <button
                     type="button"
                     onClick={() => onNavigate(item.targetView)}
-                    className="shrink-0 min-h-[44px] bg-white hover:bg-purple-50 text-purple-950 font-bold text-xs px-3.5 py-2.5 rounded-xl shadow-md flex items-center space-x-1 transition-all active:scale-95 cursor-pointer"
+                    className="shrink-0 min-h-[44px] bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs px-3.5 py-2.5 rounded-xl shadow-md flex items-center space-x-1 transition-all active:scale-95 cursor-pointer whitespace-nowrap"
                   >
                     <span>{item.ctaLabel}</span>
                     <ArrowUpRight className="w-3.5 h-3.5" />

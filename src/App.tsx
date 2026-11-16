@@ -191,7 +191,11 @@ const MainApp: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 font-sans antialiased selection:bg-purple-500 selection:text-white">
+    <div
+      className={`min-h-screen font-sans antialiased selection:bg-purple-500 selection:text-white ${
+        currentView === 'dashboard' ? 'bg-[#090d1a] text-slate-100' : 'bg-gradient-to-br from-slate-900 via-purple-950 to-slate-900 text-slate-100'
+      }`}
+    >
       {renderCurrentView()}
 
       {/* Guided Onboarding Walkthrough Modal */}

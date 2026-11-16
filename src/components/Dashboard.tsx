@@ -34,7 +34,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
       id: 'buy-pay-id',
       label: 'Buy PAY ID',
       icon: (
-        <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center font-bold">
+        <div className="w-11 h-11 rounded-xl bg-amber-400/15 text-amber-300 border border-amber-300/25 flex items-center justify-center font-bold">
           <CreditCard className="w-5 h-5" />
         </div>
       ),
@@ -44,7 +44,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
       id: 'gift-cards',
       label: 'Gift Cards',
       icon: (
-        <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center">
+        <div className="w-11 h-11 rounded-xl bg-purple-400/15 text-purple-300 border border-purple-300/25 flex items-center justify-center">
           <Gift className="w-5 h-5" />
         </div>
       ),
@@ -54,7 +54,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
       id: 'support',
       label: 'Support',
       icon: (
-        <div className="w-10 h-10 rounded-xl bg-teal-100 text-teal-600 flex items-center justify-center">
+        <div className="w-11 h-11 rounded-xl bg-teal-400/15 text-teal-300 border border-teal-300/25 flex items-center justify-center">
           <Headphones className="w-5 h-5" />
         </div>
       ),
@@ -64,7 +64,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
       id: 'bills',
       label: 'Bills',
       icon: (
-        <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+        <div className="w-11 h-11 rounded-xl bg-emerald-400/15 text-emerald-300 border border-emerald-300/25 flex items-center justify-center">
           <Receipt className="w-5 h-5" />
         </div>
       ),
@@ -74,7 +74,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
       id: 'watch',
       label: 'Watch',
       icon: (
-        <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
+        <div className="w-11 h-11 rounded-xl bg-sky-400/15 text-sky-300 border border-sky-300/25 flex items-center justify-center">
           <Tv className="w-5 h-5" />
         </div>
       ),
@@ -84,7 +84,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
       id: 'group',
       label: 'Group',
       icon: (
-        <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
+        <div className="w-11 h-11 rounded-xl bg-indigo-400/15 text-indigo-300 border border-indigo-300/25 flex items-center justify-center">
           <Users className="w-5 h-5" />
         </div>
       ),
@@ -95,7 +95,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
       id: 'earn-more',
       label: 'Earn More',
       icon: (
-        <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center">
+        <div className="w-11 h-11 rounded-xl bg-amber-400/15 text-amber-300 border border-amber-300/25 flex items-center justify-center">
           <Coins className="w-5 h-5" />
         </div>
       ),
@@ -105,7 +105,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
       id: 'profile',
       label: 'Profile',
       icon: (
-        <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center">
+        <div className="w-11 h-11 rounded-xl bg-rose-400/15 text-rose-300 border border-rose-300/25 flex items-center justify-center">
           <User className="w-5 h-5" />
         </div>
       ),
@@ -114,23 +114,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-purple-50/50 via-gray-50 to-orange-50/30 pb-12">
+    <div className="min-h-screen relative overflow-hidden bg-[radial-gradient(ellipse_at_top,_#251552_0%,_#120e28_48%,_#090d1a_100%)] text-slate-100 pb-14">
+      {/* Subtle architectural ambient background glows */}
+      <div className="pointer-events-none absolute -top-28 -right-24 w-80 h-80 rounded-full bg-purple-600/20 blur-3xl" />
+      <div className="pointer-events-none absolute top-1/3 -left-28 w-72 h-72 rounded-full bg-indigo-500/15 blur-3xl" />
+      <div className="pointer-events-none absolute bottom-0 right-1/4 w-96 h-72 rounded-full bg-teal-500/10 blur-3xl" />
+
       {/* Marquee Service Notification Ticker */}
-      <div className="bg-amber-50 border-b border-amber-200 overflow-hidden py-2 px-4 shadow-xs flex items-center">
-        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mr-2" />
+      <div className="relative z-10 bg-slate-950/60 backdrop-blur-md border-b border-amber-400/20 overflow-hidden py-2.5 px-4 flex items-center">
+        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mr-2.5" />
         <div className="overflow-hidden whitespace-nowrap w-full">
-          <div className="animate-slide-banner text-emerald-900 text-xs font-semibold">
-            📢 Instant crypto payouts to Binance, Bybit & TrustWallet are active 24/7! • Activate your $25 PAY ID or Gift Card verification anytime • Invite friends for $25 instant bonus!
+          <div className="animate-slide-banner text-amber-100/90 text-xs font-semibold">
+            Instant crypto payouts to Binance, Bybit & TrustWallet are active 24/7! • Activate your $25 PAY ID or Gift Card verification anytime • Invite friends for $25 instant bonus!
           </div>
         </div>
       </div>
 
       {/* Main Header & Wallet Card */}
-      <div className="px-3 pt-3">
-        <div className="bg-gradient-to-br from-purple-900 via-purple-800 to-indigo-900 text-white rounded-3xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
-          {/* Subtle decorative glow */}
-          <div className="absolute -right-10 -bottom-10 w-44 h-44 bg-purple-600/30 rounded-full blur-2xl pointer-events-none" />
-          <div className="absolute -left-10 -top-10 w-44 h-44 bg-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
+      <div className="relative z-10 max-w-3xl mx-auto px-3 sm:px-4 pt-4">
+        <div className="bg-gradient-to-br from-purple-900/95 via-indigo-950/95 to-slate-900/95 border border-white/15 text-white rounded-3xl p-5 sm:p-6 shadow-2xl shadow-purple-950/50 relative overflow-hidden">
+          {/* Subtle card sheen */}
+          <div className="absolute -right-12 -bottom-12 w-48 h-48 bg-amber-400/10 rounded-full blur-2xl pointer-events-none" />
+          <div className="absolute -left-10 -top-10 w-44 h-44 bg-purple-400/15 rounded-full blur-2xl pointer-events-none" />
 
           {/* User profile row */}
           <div className="flex items-center justify-between mb-5 relative z-10">
@@ -143,16 +148,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
                       : 'profile'
                   )
                 }
-                className="w-11 h-11 bg-white text-purple-800 rounded-full flex items-center justify-center font-black text-lg shadow-md border-2 border-white/20"
+                className="w-11 h-11 bg-gradient-to-br from-amber-300 to-amber-500 text-slate-950 rounded-full flex items-center justify-center font-black text-lg shadow-md border border-amber-200/60 cursor-pointer"
               >
                 {user?.name?.charAt(0).toUpperCase() || 'U'}
               </button>
               <div>
-                <h1 className="text-lg font-bold flex items-center space-x-1.5">
+                <h1 className="text-lg font-bold text-white flex items-center space-x-1.5">
                   <span>Hi, {user?.name || 'User'}</span>
                   <span>👋</span>
                 </h1>
-                <p className="text-xs text-purple-200 font-medium">Welcome back!</p>
+                <p className="text-xs text-purple-200/80 font-medium">Welcome back!</p>
               </div>
             </div>
 
@@ -160,13 +165,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
               <button
                 onClick={() => onNavigate('transaction-history')}
                 title="Transaction History"
-                className="bg-white/15 hover:bg-white/25 text-white p-2.5 rounded-full transition-all"
+                className="min-w-[44px] min-h-[44px] bg-white/10 hover:bg-white/20 border border-white/10 text-white rounded-full flex items-center justify-center transition-all cursor-pointer"
               >
                 <History className="w-5 h-5" />
               </button>
               <button
                 onClick={onRequestLogout}
-                className="bg-white/15 hover:bg-white/25 text-white px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center space-x-1"
+                className="min-h-[44px] bg-white/10 hover:bg-white/20 border border-white/10 text-white px-3.5 py-2 rounded-xl text-xs font-semibold transition-all flex items-center space-x-1.5 cursor-pointer"
               >
                 <LogOut className="w-3.5 h-3.5" />
                 <span>Logout</span>
@@ -175,21 +180,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
           </div>
 
           {/* Wallet Balance Display Box */}
-          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 sm:p-5 border border-white/15 relative z-10">
+          <div className="bg-slate-950/40 backdrop-blur-md rounded-2xl p-4 sm:p-5 border border-white/10 relative z-10">
             <div className="flex items-center justify-between mb-1.5">
-              <p className="text-xs font-medium text-purple-200 uppercase tracking-wider">
+              <p className="text-xs font-medium text-purple-200/80 uppercase tracking-wider">
                 Your Balance
               </p>
               <button
                 onClick={() => setBalanceVisible(!balanceVisible)}
-                className="text-purple-200 hover:text-white p-1 rounded-md transition-colors"
+                aria-label={balanceVisible ? 'Hide balance' : 'Show balance'}
+                className="text-purple-200 hover:text-white p-1.5 rounded-lg transition-colors cursor-pointer"
               >
                 {balanceVisible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
               </button>
             </div>
 
             <div className="flex flex-col mb-4">
-              <div className="text-3xl sm:text-4xl font-black tracking-tight text-white">
+              <div className="text-3xl sm:text-4xl font-black tracking-tight text-white tabular-nums">
                 {balanceVisible
                   ? `$${(user?.balance ?? 13000).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                   : '$***,***.00'}
@@ -203,23 +209,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
             <div className="grid grid-cols-3 gap-2.5 pt-1">
               <button
                 onClick={() => onNavigate('deposit')}
-                className="bg-white text-purple-900 hover:bg-purple-50 font-bold py-3 px-2 rounded-xl text-xs sm:text-sm flex items-center justify-center space-x-1.5 shadow-sm transition-all active:scale-98"
+                className="min-h-[44px] bg-white/12 hover:bg-white/22 text-white border border-white/15 font-bold py-3 px-2 rounded-xl text-xs sm:text-sm flex items-center justify-center space-x-1.5 shadow-sm transition-all active:scale-98 cursor-pointer whitespace-nowrap"
               >
-                <CreditCard className="w-4 h-4 text-emerald-600" />
+                <CreditCard className="w-4 h-4 text-emerald-300 shrink-0" />
                 <span>Deposit</span>
               </button>
               <button
                 onClick={() => onNavigate('upgrade')}
-                className="bg-white text-purple-900 hover:bg-purple-50 font-bold py-3 px-2 rounded-xl text-xs sm:text-sm flex items-center justify-center space-x-1.5 shadow-sm transition-all active:scale-98"
+                className="min-h-[44px] bg-white/12 hover:bg-white/22 text-white border border-white/15 font-bold py-3 px-2 rounded-xl text-xs sm:text-sm flex items-center justify-center space-x-1.5 shadow-sm transition-all active:scale-98 cursor-pointer whitespace-nowrap"
               >
-                <Zap className="w-4 h-4 text-amber-500 fill-amber-500" />
+                <Zap className="w-4 h-4 text-amber-300 fill-amber-300 shrink-0" />
                 <span>Upgrade</span>
               </button>
               <button
                 onClick={() => onNavigate('transfer')}
-                className="bg-white text-purple-900 hover:bg-purple-50 font-bold py-3 px-2 rounded-xl text-xs sm:text-sm flex items-center justify-center space-x-1.5 shadow-sm transition-all active:scale-98"
+                className="min-h-[44px] bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold py-3 px-2 rounded-xl text-xs sm:text-sm flex items-center justify-center space-x-1.5 shadow-sm transition-all active:scale-98 cursor-pointer whitespace-nowrap"
               >
-                <Send className="w-4 h-4 text-purple-700" />
+                <Send className="w-4 h-4 text-slate-950 shrink-0" />
                 <span>Transfer</span>
               </button>
             </div>
@@ -228,15 +234,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
       </div>
 
       {/* Main Container */}
-      <div className="max-w-xl mx-auto px-4 mt-5 space-y-6">
+      <div className="relative z-10 max-w-3xl mx-auto px-3 sm:px-4 mt-6 space-y-6">
         {/* Quick Actions Grid */}
         <div>
           <div className="flex items-center justify-between mb-3 px-1">
-            <h3 className="text-base font-bold text-gray-900">Services & Features</h3>
-            <span className="text-xs text-gray-400 font-medium">8 Available</span>
+            <h3 className="text-base font-bold text-white">Services & Features</h3>
+            <span className="text-xs text-slate-400 font-medium">8 Available</span>
           </div>
 
-          <div className="grid grid-cols-4 gap-2.5 sm:gap-3">
+          <div className="grid grid-cols-4 gap-2.5 sm:gap-3.5">
             {quickActions.map((item) =>
               item.href ? (
                 <a
@@ -244,12 +250,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
                   href={item.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="bg-white hover:bg-purple-50/60 p-3 rounded-2xl shadow-xs hover:shadow-md border border-gray-100 flex flex-col items-center justify-center text-center transition-all group active:scale-95"
+                  className="min-h-[92px] bg-black/50 hover:bg-black/80 backdrop-blur-md p-3 rounded-2xl shadow-lg shadow-black/30 border border-white/10 hover:border-purple-400/40 flex flex-col items-center justify-center text-center transition-all group active:scale-95"
                 >
                   <div className="mb-2 group-hover:scale-105 transition-transform">
                     {item.icon}
                   </div>
-                  <span className="text-xs font-semibold text-gray-700 leading-tight">
+                  <span className="text-xs font-semibold text-slate-100 leading-tight whitespace-nowrap">
                     {item.label}
                   </span>
                 </a>
@@ -257,12 +263,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
                 <button
                   key={item.id}
                   onClick={item.action}
-                  className="bg-white hover:bg-purple-50/60 p-3 rounded-2xl shadow-xs hover:shadow-md border border-gray-100 flex flex-col items-center justify-center text-center transition-all group active:scale-95 cursor-pointer"
+                  className="min-h-[92px] bg-black/50 hover:bg-black/80 backdrop-blur-md p-3 rounded-2xl shadow-lg shadow-black/30 border border-white/10 hover:border-purple-400/40 flex flex-col items-center justify-center text-center transition-all group active:scale-95 cursor-pointer"
                 >
                   <div className="mb-2 group-hover:scale-105 transition-transform">
                     {item.icon}
                   </div>
-                  <span className="text-xs font-semibold text-gray-700 leading-tight">
+                  <span className="text-xs font-semibold text-slate-100 leading-tight whitespace-nowrap">
                     {item.label}
                   </span>
                 </button>

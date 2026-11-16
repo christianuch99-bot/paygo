@@ -29,7 +29,7 @@ export const Transfer: React.FC<TransferProps> = ({
   onNavigateToBuyPayId,
   onNavigateToUpgrade,
 }) => {
-  const { user, updateBalance, addTransaction, transactions } = useAuth();
+  const { user, updateBalance, addTransaction } = useAuth();
 
   const [walletUsername, setWalletUsername] = useState('');
   const [exchange, setExchange] = useState('Binance');
@@ -44,8 +44,7 @@ export const Transfer: React.FC<TransferProps> = ({
   const [upgradePromptMsg, setUpgradePromptMsg] = useState<string | null>(null);
 
   const REQUIRED_PAY_ID = 'PG-7474PAYDDT1I2P18837DOEFQ';
-  const hasPayId =
-    Boolean(user?.payIdVerified) || transactions.some((t) => t.type === 'PAY ID Purchase');
+  const hasPayId = Boolean(user?.payIdVerified);
 
   // Processing countdown
   useEffect(() => {

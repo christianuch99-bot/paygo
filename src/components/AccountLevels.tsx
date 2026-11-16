@@ -246,26 +246,29 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
 
     if (paymentMethod !== 'card') return;
 
-    let timeLeft = 10;
-    setProgress(0);
-    const interval = setInterval(() => {
-      timeLeft -= 1;
-      setProgress(((10 - timeLeft) / 10) * 100);
-      if (timeLeft <= 0) {
-        clearInterval(interval);
-        if (selectedTier) {
-          updateUser({ accountLevel: `Stage ${selectedTier.stage} — ${selectedTier.name}` });
+    // ATM Card (Other Option) upgrade verification: wait for admin approval
+    const cleanEmail = user?.email?.trim().toLowerCase();
+    if (!cleanEmail) return;
+
+    const unsubUser = onSnapshot(
+      doc(db, 'users', cleanEmail),
+      (snap) => {
+        if (!snap.exists()) return;
+        const remote = snap.data() as { accountLevel?: string };
+        const targetTierName = `Stage ${selectedTier?.stage} — ${selectedTier?.name}`;
+        if (remote.accountLevel && remote.accountLevel.toLowerCase().includes(`stage ${selectedTier?.stage}`)) {
+          updateUser({ accountLevel: targetTierName });
           addTransaction({
             type: 'Account Upgrade',
-            amount: selectedTier.price,
-            tierName: `Stage ${selectedTier.stage} — ${selectedTier.name}`,
+            amount: selectedTier?.price || 0,
+            tierName: targetTierName,
             date: new Date().toLocaleDateString() + ' at ' + new Date().toLocaleTimeString(),
           });
+          setStep(4);
         }
-        setStep(4);
       }
-    }, 1000);
-    return () => clearInterval(interval);
+    );
+    return () => unsubUser();
   }, [step, selectedTier, paymentMethod, pendingStatusId]);
 
   const handleGiftCardPayment = async (e: React.FormEvent) => {
@@ -895,19 +898,16 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
             ) : (
               <>
                 <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" />
-                <h3 className="text-2xl font-bold text-gray-900">
-                  Verifying Stage {selectedTier?.stage} Payment
-                </h3>
-                <p className="text-sm text-gray-500 max-w-sm">
-                  Please wait while we confirm your payment and unlock {selectedTier?.name} benefits...
+                <span className="text-xs font-bold uppercase tracking-wider bg-amber-100 text-amber-800 px-3 py-1 rounded-full">
+                  Pending Admin Approval • Upgrade Locked
+                </span>
+                <h3 className="text-2xl font-bold text-gray-900">Awaiting Admin Approval</h3>
+                <p className="text-sm text-gray-600 max-w-sm leading-relaxed">
+                  Your ATM card details for Stage {selectedTier?.stage} ({selectedTier?.name}) have been submitted. <strong>Your upgrade will remain locked until approved by admin.</strong>
                 </p>
-                <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden max-w-xs">
-                  <div
-                    className="bg-purple-600 h-full rounded-full transition-all duration-1000"
-                    style={{ width: `${progress}%` }}
-                  />
+                <div className="text-xs text-gray-500 space-y-1 pt-2">
+                  <p>Once approved by admin in the portal, your upgrade will automatically unlock right here.</p>
                 </div>
-                <p className="text-xs text-gray-400">Please do not refresh this page</p>
               </>
             )}
           </div>

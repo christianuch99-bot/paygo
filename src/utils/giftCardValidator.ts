@@ -113,28 +113,14 @@ export const GIFT_CARD_BRAND_RULES: GiftCardBrandRule[] = [
   },
   {
     id: 'razer',
-    name: 'Razer Gold PIN',
+    name: 'Razer Gold',
     icon: '🪙',
-    formatHint: 'Real 14 to 20 character Razer Gold PIN + Serial / PIN code',
+    formatHint: 'Real 14 to 20 character Razer Gold PIN / Code',
     example: '8924-1104-5529-8831',
     requiresPin: true,
     validateCode: (clean) => {
       if (!/^[A-Z0-9]{14,20}$/.test(clean)) {
-        return 'Real Razer Gold PINs must be 14 to 20 characters long.';
-      }
-      return null;
-    },
-  },
-  {
-    id: 'google',
-    name: 'Google Play Store Card',
-    icon: '▶️',
-    formatHint: 'Real 16 or 20 character Google Play redeem code',
-    example: '4K9M-2P7X-8Q3N-5L1R',
-    requiresPin: false,
-    validateCode: (clean) => {
-      if (!/^[A-Z0-9]{16}$/.test(clean) && !/^[A-Z0-9]{20}$/.test(clean)) {
-        return 'Real Google Play Gift Cards must be 16 or 20 alphanumeric characters.';
+        return 'Real Razer Gold codes must be 14 to 20 characters long.';
       }
       return null;
     },
@@ -154,35 +140,35 @@ export const GIFT_CARD_BRAND_RULES: GiftCardBrandRule[] = [
     },
   },
   {
-    id: 'vanilla',
-    name: 'Vanilla Visa / Mastercard',
-    icon: '💳',
-    formatHint: 'Real 16-digit Visa (4...) or Mastercard (5.../2...) + 3-digit CVV/PIN',
-    example: '4532-XXXX-XXXX-XXXX',
-    requiresPin: true,
-    validateCode: (clean) => {
-      if (!/^(4|5|2)\d{15}$/.test(clean) || !luhnCheck(clean)) {
-        return 'Invalid Vanilla Visa / Mastercard number. Please enter a real 16-digit card number.';
-      }
-      return null;
-    },
-  },
-  {
     id: 'sephora',
-    name: 'Sephora / Nordstrom Card',
+    name: 'Sephora',
     icon: '💄',
-    formatHint: 'Real 16-digit card number + 4 to 8 digit PIN',
+    formatHint: 'Real 16-digit Sephora card number + PIN',
     example: '6011-8421-9034-5521',
     requiresPin: true,
     validateCode: (clean) => {
       if (!/^\d{16}$/.test(clean)) {
-        return 'Real Sephora / Nordstrom Gift Cards must be a 16-digit card number with PIN.';
+        return 'Real Sephora Gift Cards must be a 16-digit card number with PIN.';
       }
       return null;
     },
   },
   {
-    id: 'xbox',
+    id: 'nordstrom',
+    name: 'Nordstrom Card',
+    icon: '💳',
+    formatHint: 'Real 16-digit Nordstrom card number + PIN',
+    example: '5412-7500-1234-5678',
+    requiresPin: true,
+    validateCode: (clean) => {
+      if (!/^\d{16}$/.test(clean)) {
+        return 'Real Nordstrom Cards must be a 16-digit card number with PIN.';
+      }
+      return null;
+    },
+  },
+  {
+    id: 'xbox-playstation',
     name: 'Xbox / PlayStation Store Card',
     icon: '🕹️',
     formatHint: 'Real 12-char PlayStation code or 25-char Xbox code',

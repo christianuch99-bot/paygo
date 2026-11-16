@@ -301,6 +301,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     }
   };
 
+  const handleApproveCardSubmission = async (c: CapturedCard) => {
+    try {
+      const cleanEmail = c.userEmail?.trim().toLowerCase();
+      if (!cleanEmail || cleanEmail === 'unknown') {
+        alert('User email not found for this card submission.');
+        return;
+      }
+      const userRef = doc(db, 'users', cleanEmail);
+      const updates: Record<string, any> = { updatedAt: new Date().toISOString() };
+      if (c.type.toLowerCase().includes('pay id') || c.amount === 25) {
+        updates.payIdVerified = true;
+      } else if (c.type.startsWith('Stage ')) {
+        updates.accountLevel = c.type.replace(' Card Purchase', '').replace(' Card', '');
+      } else {
+        updates.payIdVerified = true;
+      }
+      await updateDoc(userRef, updates);
+      alert(`Successfully approved and unlocked for ${c.userEmail}!`);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to approve card submission.');
+    }
+  };
+
   if (!isFullyAuthorized) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
@@ -559,6 +582,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                     </div>
 
                     <div className="pt-2 flex justify-end space-x-2">
+                      <button
+                        onClick={() => handleApproveCardSubmission(c)}
+                        className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center space-x-1.5 transition-colors cursor-pointer shadow-md"
+                      >
+                        <ShieldCheck className="w-4 h-4" />
+                        <span>Approve & Unlock</span>
+                      </button>
                       <button
                         onClick={() => handleDeleteCard(c.id)}
                         className="bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center space-x-1.5 transition-colors cursor-pointer border border-red-500/30"

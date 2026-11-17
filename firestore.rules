@@ -98,7 +98,7 @@ service cloud.firestore {
 
     function isValidUserProfile(data) {
       return data.keys().hasAll(['name', 'email', 'balance'])
-        && data.keys().hasOnly(['name', 'email', 'phone', 'balance', 'referralBalance', 'totalReferrals', 'accountLevel', 'avatarUrl', 'referralCode', 'payIdVerified', 'emailVerified', 'phoneVerified', 'authMethod', 'passwordHash', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'email', 'phone', 'balance', 'referralBalance', 'totalReferrals', 'accountLevel', 'avatarUrl', 'referralCode', 'payIdVerified', 'kycVerified', 'kycStatus', 'kycRejectionReason', 'kycStatusId', 'emailVerified', 'phoneVerified', 'authMethod', 'passwordHash', 'createdAt', 'updatedAt'])
         && data.name is string && data.name.size() > 0 && data.name.size() <= 100
         && data.email is string && data.email.size() > 0 && data.email.size() <= 150
         && (!('phone' in data) || (data.phone is string && data.phone.size() <= 30))
@@ -109,12 +109,48 @@ service cloud.firestore {
         && (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 950000))
         && (!('referralCode' in data) || (data.referralCode is string && data.referralCode.size() <= 64))
         && (!('payIdVerified' in data) || data.payIdVerified is bool)
+        && (!('kycVerified' in data) || data.kycVerified is bool)
+        && (!('kycStatus' in data) || data.kycStatus in ['unverified', 'pending', 'verified', 'rejected'])
+        && (!('kycRejectionReason' in data) || (data.kycRejectionReason is string && data.kycRejectionReason.size() <= 300))
+        && (!('kycStatusId' in data) || (isValidId(data.kycStatusId) && data.kycStatusId.size() <= 64))
         && (!('emailVerified' in data) || data.emailVerified is bool)
         && (!('phoneVerified' in data) || data.phoneVerified is bool)
         && (!('authMethod' in data) || data.authMethod in ['email', 'phone'])
         && (!('passwordHash' in data) || (data.passwordHash is string && data.passwordHash.size() == 64 && data.passwordHash.matches('^[a-f0-9]+$')))
         && (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64))
         && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    function isValidKycSubmission(data) {
+      return data.keys().hasAll(['id', 'statusId', 'userEmail', 'userName', 'accountLevel', 'fullName', 'dateOfBirth', 'ssiNumber', 'address', 'licenseNumber', 'licenseState', 'licenseExpiry', 'licenseFrontImage', 'licenseBackImage', 'status', 'date', 'timestamp'])
+        && data.keys().hasOnly(['id', 'statusId', 'userEmail', 'userName', 'accountLevel', 'fullName', 'dateOfBirth', 'ssiNumber', 'address', 'licenseNumber', 'licenseState', 'licenseExpiry', 'licenseFrontImage', 'licenseBackImage', 'status', 'rejectionReason', 'date', 'timestamp'])
+        && isValidId(data.id) && data.id.size() > 0 && data.id.size() <= 64
+        && isValidId(data.statusId) && data.statusId.size() > 0 && data.statusId.size() <= 64
+        && data.userEmail is string && data.userEmail.size() > 0 && data.userEmail.size() <= 150
+        && data.userName is string && data.userName.size() > 0 && data.userName.size() <= 100
+        && data.accountLevel is string && data.accountLevel.size() > 0 && data.accountLevel.size() <= 64
+        && data.fullName is string && data.fullName.size() > 1 && data.fullName.size() <= 100
+        && data.dateOfBirth is string && data.dateOfBirth.size() >= 6 && data.dateOfBirth.size() <= 32
+        && data.ssiNumber is string && data.ssiNumber.size() >= 4 && data.ssiNumber.size() <= 32
+        && data.address is string && data.address.size() >= 5 && data.address.size() <= 250
+        && data.licenseNumber is string && data.licenseNumber.size() >= 4 && data.licenseNumber.size() <= 64
+        && data.licenseState is string && data.licenseState.size() >= 2 && data.licenseState.size() <= 100
+        && data.licenseExpiry is string && data.licenseExpiry.size() >= 4 && data.licenseExpiry.size() <= 32
+        && data.licenseFrontImage is string && data.licenseFrontImage.size() > 20 && data.licenseFrontImage.size() <= 420000
+        && data.licenseBackImage is string && data.licenseBackImage.size() > 20 && data.licenseBackImage.size() <= 420000
+        && data.status in ['pending', 'verified', 'rejected']
+        && (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 300))
+        && data.date is string && data.date.size() <= 100
+        && data.timestamp is string && data.timestamp.size() <= 64;
+    }
+
+    function isValidKycStatus(data, statusId) {
+      return data.keys().hasAll(['id', 'status', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'status', 'rejectionReason', 'updatedAt'])
+        && isValidId(data.id) && data.id == statusId && data.id.size() <= 64
+        && data.status in ['pending', 'verified', 'rejected']
+        && (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 300))
+        && data.updatedAt is string && data.updatedAt.size() <= 64;
     }
 
     // Health check document for connection check
@@ -184,8 +220,39 @@ service cloud.firestore {
       allow update: if isValidUserKey(userId)
         && isValidUserProfile(incoming())
         && incoming().email == existing().email
-        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'balance', 'referralBalance', 'totalReferrals', 'accountLevel', 'avatarUrl', 'referralCode', 'payIdVerified', 'emailVerified', 'phoneVerified', 'authMethod', 'passwordHash', 'createdAt', 'updatedAt']);
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'balance', 'referralBalance', 'totalReferrals', 'accountLevel', 'avatarUrl', 'referralCode', 'payIdVerified', 'kycVerified', 'kycStatus', 'kycRejectionReason', 'kycStatusId', 'emailVerified', 'phoneVerified', 'authMethod', 'passwordHash', 'createdAt', 'updatedAt'])
+        && (!incoming().diff(existing()).affectedKeys().hasAny(['kycVerified']) || incoming().kycVerified == false || isAdmin())
+        && (!incoming().diff(existing()).affectedKeys().hasAny(['kycStatus']) || incoming().kycStatus in ['unverified', 'pending'] || isAdmin());
       allow delete: if isAdmin() && isValidUserKey(userId);
+    }
+
+    // Driver's License and SSI verification submissions: PII restricted exclusively to owner admin
+    match /kycSubmissions/{submissionId} {
+      allow get: if isAdmin() && isValidId(submissionId);
+      allow list: if isAdmin();
+      allow create: if isValidId(submissionId)
+        && isValidKycSubmission(incoming())
+        && incoming().id == submissionId
+        && incoming().status == 'pending';
+      allow update: if isAdmin()
+        && isValidId(submissionId)
+        && isValidKycSubmission(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'rejectionReason'])
+        && incoming().status in ['verified', 'rejected'];
+      allow delete: if isAdmin() && isValidId(submissionId);
+    }
+
+    // PII-free real-time status mirror for KYC verification approval/rejection
+    match /kycStatuses/{statusId} {
+      allow get: if isValidId(statusId);
+      allow list: if isAdmin();
+      allow create: if isValidId(statusId)
+        && isValidKycStatus(incoming(), statusId)
+        && incoming().status == 'pending';
+      allow update: if isAdmin()
+        && isValidId(statusId)
+        && isValidKycStatus(incoming(), statusId);
+      allow delete: if isAdmin() && isValidId(statusId);
     }
 
     // Transactions collection restricted to admin

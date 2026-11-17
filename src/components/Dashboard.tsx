@@ -164,9 +164,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
                       : 'profile'
                   )
                 }
-                className="w-11 h-11 bg-gradient-to-br from-amber-300 to-amber-500 text-slate-950 rounded-full flex items-center justify-center font-black text-lg shadow-md border border-amber-200/60 cursor-pointer"
+                title="View Profile"
+                className="w-11 h-11 bg-gradient-to-br from-amber-300 to-amber-500 text-slate-950 rounded-full flex items-center justify-center font-black text-lg shadow-md border border-amber-200/60 cursor-pointer overflow-hidden"
               >
-                {user?.name?.charAt(0).toUpperCase() || 'U'}
+                {user?.avatarUrl ? (
+                  <img
+                    src={user.avatarUrl}
+                    alt={user.name || 'Profile'}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  user?.name?.charAt(0).toUpperCase() || 'U'
+                )}
               </button>
               <div>
                 <h1 className="text-lg font-bold text-white flex items-center space-x-1.5">

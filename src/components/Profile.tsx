@@ -1,10 +1,10 @@
 import React, { useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { ViewState } from '../types';
+import { compressAvatarImage } from '../utils/avatarUtils';
 import {
   ArrowLeft,
   User,
-  ShieldCheck,
   HelpCircle,
   Info,
   Users,
@@ -13,6 +13,10 @@ import {
   LogOut,
   Camera,
   ShieldAlert,
+  ShieldCheck,
+  Trash2,
+  Check,
+  Upload,
 } from 'lucide-react';
 
 interface ProfileProps {
@@ -24,16 +28,35 @@ interface ProfileProps {
 export const Profile: React.FC<ProfileProps> = ({ onBack, onNavigate, onRequestLogout }) => {
   const { user, updateUser } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [photoMessage, setPhotoMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        updateUser({ avatarUrl: reader.result as string });
-      };
-      reader.readAsDataURL(file);
+    e.target.value = '';
+    if (!file) return;
+
+    setPhotoMessage(null);
+    setIsUploadingPhoto(true);
+    try {
+      const compressedDataUrl = await compressAvatarImage(file);
+      updateUser({ avatarUrl: compressedDataUrl });
+      setPhotoMessage({ type: 'success', text: 'Profile picture updated!' });
+      setTimeout(() => setPhotoMessage(null), 2500);
+    } catch (err: any) {
+      setPhotoMessage({
+        type: 'error',
+        text: err?.message || 'Unable to upload profile picture. Please try another image.',
+      });
+    } finally {
+      setIsUploadingPhoto(false);
     }
+  };
+
+  const handleRemoveAvatar = () => {
+    updateUser({ avatarUrl: '' });
+    setPhotoMessage({ type: 'success', text: 'Profile picture removed.' });
+    setTimeout(() => setPhotoMessage(null), 2500);
   };
 
   const isAdminOwner = user?.email?.toLowerCase() === 'ibro88977@gmail.com';
@@ -54,6 +77,21 @@ export const Profile: React.FC<ProfileProps> = ({ onBack, onNavigate, onRequestL
       title: 'Account Level',
       desc: `Current Tier: ${user?.accountLevel || 'Basic'}`,
       action: () => onNavigate('upgrade'),
+    },
+    {
+      id: 'kyc-verification',
+      icon: <ShieldCheck className="w-5 h-5 text-indigo-600" />,
+      bg: 'bg-indigo-100',
+      title: 'Account Verification (ID & SSI)',
+      desc:
+        user?.kycVerified || user?.kycStatus === 'verified'
+          ? 'Verified — Withdrawals Unlocked'
+          : user?.kycStatus === 'pending'
+          ? 'Pending Admin Review'
+          : user?.kycStatus === 'rejected'
+          ? 'Rejected — Please Resubmit ID & SSI'
+          : "Driver's License & SSI (Required at Ruby Tier)",
+      action: () => onNavigate('kyc-verification'),
     },
     {
       id: 'refer-earn',
@@ -121,9 +159,11 @@ export const Profile: React.FC<ProfileProps> = ({ onBack, onNavigate, onRequestL
             className="hidden"
           />
           <button
+            type="button"
             onClick={() => fileInputRef.current?.click()}
+            disabled={isUploadingPhoto}
             className="relative group cursor-pointer focus:outline-none"
-            title="Tap to change profile picture"
+            title="Tap to upload or change profile picture"
           >
             <div className="w-24 h-24 bg-purple-100 rounded-full flex items-center justify-center border-4 border-purple-600 shadow-md overflow-hidden">
               {user?.avatarUrl ? (
@@ -143,7 +183,41 @@ export const Profile: React.FC<ProfileProps> = ({ onBack, onNavigate, onRequestL
           <p className="text-xs text-gray-500 font-mono">
             {user?.email?.endsWith('@phone.paygo.com') ? user.phone : user?.email}
           </p>
-          <p className="text-xs text-purple-600 font-medium mt-1">Tap to change profile picture</p>
+
+          <div className="flex items-center space-x-2 mt-3">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploadingPhoto}
+              className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold flex items-center space-x-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-60"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>{isUploadingPhoto ? 'Uploading...' : user?.avatarUrl ? 'Change Picture' : 'Upload Picture'}</span>
+            </button>
+            {user?.avatarUrl && (
+              <button
+                type="button"
+                onClick={handleRemoveAvatar}
+                className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-xl text-xs font-semibold flex items-center space-x-1 transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Remove</span>
+              </button>
+            )}
+          </div>
+
+          {photoMessage && (
+            <div
+              className={`mt-3 px-3.5 py-2 rounded-xl text-xs font-medium flex items-center space-x-1.5 ${
+                photoMessage.type === 'success'
+                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
+                  : 'bg-red-50 border border-red-200 text-red-700'
+              }`}
+            >
+              {photoMessage.type === 'success' && <Check className="w-3.5 h-3.5" />}
+              <span>{photoMessage.text}</span>
+            </div>
+          )}
         </div>
 
         {/* Menu Items */}

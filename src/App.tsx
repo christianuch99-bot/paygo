@@ -22,6 +22,7 @@ import { AdminPanel } from './components/AdminPanel';
 import { OnboardingModal } from './components/OnboardingModal';
 import { ReferPopup } from './components/ReferPopup';
 import { BillPayment } from './components/BillPayment';
+import { KycVerification } from './components/KycVerification';
 
 const MainApp: React.FC = () => {
   const {
@@ -125,6 +126,7 @@ const MainApp: React.FC = () => {
             onBack={() => setCurrentView('dashboard')}
             onNavigateToBuyPayId={() => setCurrentView('buy-pay-id')}
             onNavigateToUpgrade={() => setCurrentView('upgrade')}
+            onNavigateToKyc={() => setCurrentView('kyc-verification')}
           />
         );
       case 'gift-cards':
@@ -163,7 +165,20 @@ const MainApp: React.FC = () => {
           />
         );
       case 'upgrade':
-        return <AccountLevels onBack={() => setCurrentView('dashboard')} />;
+        return (
+          <AccountLevels
+            onBack={() => setCurrentView('dashboard')}
+            onNavigateToKyc={() => setCurrentView('kyc-verification')}
+          />
+        );
+      case 'kyc-verification':
+        return (
+          <KycVerification
+            onBack={() => setCurrentView('dashboard')}
+            onNavigateToUpgrade={() => setCurrentView('upgrade')}
+            onNavigateToTransfer={() => setCurrentView('transfer')}
+          />
+        );
       case 'join-communities':
         return <Communities onBack={() => setCurrentView('dashboard')} />;
       case 'deposit':

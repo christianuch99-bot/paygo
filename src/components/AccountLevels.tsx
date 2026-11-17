@@ -26,6 +26,7 @@ import {
 
 interface AccountLevelsProps {
   onBack: () => void;
+  onNavigateToKyc?: () => void;
 }
 
 interface Tier {
@@ -40,7 +41,7 @@ interface Tier {
 
 const GIFT_CARD_BRANDS = GIFT_CARD_BRAND_RULES;
 
-export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
+export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigateToKyc }) => {
   const { user, updateUser, addTransaction } = useAuth();
 
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
@@ -997,12 +998,30 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack }) => {
                   <span>Upgrade to Stage 5 — Ruby ($200)</span>
                 </button>
               </div>
+            ) : !user?.kycVerified && onNavigateToKyc ? (
+              <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 text-left space-y-3">
+                <div className="flex items-center space-x-2 text-purple-900 font-bold text-sm">
+                  <ShieldCheck className="w-4 h-4 text-purple-600 shrink-0" />
+                  <span>Final Step: Verify Driver&apos;s License &amp; SSI Details</span>
+                </div>
+                <p className="text-xs text-purple-800 leading-relaxed">
+                  You have reached <strong>Stage {selectedTier.stage} ({selectedTier.name})</strong>! Complete your Account Verification with your <strong>Driver&apos;s License &amp; SSI details</strong> to unlock withdrawals.
+                </p>
+                <button
+                  type="button"
+                  onClick={onNavigateToKyc}
+                  className="w-full min-h-[44px] bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl text-xs sm:text-sm shadow-sm transition-all cursor-pointer flex items-center justify-center space-x-1.5"
+                >
+                  <ShieldCheck className="w-4 h-4 text-emerald-300" />
+                  <span>Verify Driver&apos;s License &amp; SSI Now</span>
+                </button>
+              </div>
             ) : null}
 
             <button
               onClick={onBack}
               className={`w-full font-bold py-3.5 rounded-xl text-sm transition-all cursor-pointer ${
-                selectedTier.stage < 5
+                selectedTier.stage < 5 || (!user?.kycVerified && onNavigateToKyc)
                   ? 'bg-gray-100 hover:bg-gray-200 text-gray-700'
                   : 'bg-purple-600 hover:bg-purple-700 text-white shadow-md'
               }`}

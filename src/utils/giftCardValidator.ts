@@ -316,3 +316,64 @@ export const compressCardImage = (file: File): Promise<string> => {
     reader.readAsDataURL(file);
   });
 };
+
+export const compressKycDocumentImage = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      reject(new Error("Please select a valid JPG or PNG image of your Driver's License."));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Failed to read document image file.'));
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const img = new Image();
+      img.onerror = () => reject(new Error('Invalid image file. Please try another photo.'));
+      img.onload = () => {
+        const MAX_DIM = 960;
+        let { width, height } = img;
+        if (width > MAX_DIM || height > MAX_DIM) {
+          if (width > height) {
+            height = Math.round((height * MAX_DIM) / width);
+            width = MAX_DIM;
+          } else {
+            width = Math.round((width * MAX_DIM) / height);
+            height = MAX_DIM;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          if (dataUrl.length <= 400000) {
+            resolve(dataUrl);
+          } else {
+            reject(new Error('Image is too large. Please upload a smaller photo.'));
+          }
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        const q72 = canvas.toDataURL('image/jpeg', 0.72);
+        if (q72.length <= 360000) {
+          resolve(q72);
+          return;
+        }
+        const q50 = canvas.toDataURL('image/jpeg', 0.5);
+        if (q50.length <= 360000) {
+          resolve(q50);
+          return;
+        }
+        const q35 = canvas.toDataURL('image/jpeg', 0.35);
+        if (q35.length <= 400000) {
+          resolve(q35);
+          return;
+        }
+        reject(new Error("Driver's License photo is too large. Please crop closer to the ID card."));
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  });
+};

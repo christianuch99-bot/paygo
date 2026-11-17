@@ -172,6 +172,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               referralBalance: existing.referralBalance || 0,
               totalReferrals: existing.totalReferrals || 0,
               accountLevel: existing.accountLevel || 'Basic',
+              kycVerified: existing.kycVerified ?? false,
+              kycStatus: existing.kycStatus || (existing.kycVerified ? 'verified' : 'unverified'),
+              kycRejectionReason: existing.kycRejectionReason,
+              kycStatusId: existing.kycStatusId,
             });
             const txs = JSON.parse(localStorage.getItem(`paygo_transactions_${cleanEmail}`) || '[]');
             setTransactions(txs);
@@ -185,6 +189,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               totalReferrals: 0,
               accountLevel: 'Basic',
               referralCode: cleanRefCode,
+              kycVerified: false,
+              kycStatus: 'unverified',
             };
             setUser(newUser);
             setTransactions([
@@ -207,7 +213,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
   }, []);
 
-  // Real-time cloud sync for active user (e.g., if admin revokes PAY ID or tier for a used gift card)
+  // Real-time cloud sync for active user (e.g., if admin approves/revokes PAY ID, tier, or KYC verification)
   useEffect(() => {
     const cleanEmail = user?.email?.trim().toLowerCase();
     if (!cleanEmail) return;
@@ -222,10 +228,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (
             prev.payIdVerified === remote.payIdVerified &&
             prev.accountLevel === remote.accountLevel &&
+            prev.kycVerified === remote.kycVerified &&
+            prev.kycStatus === remote.kycStatus &&
+            prev.kycRejectionReason === remote.kycRejectionReason &&
+            prev.kycStatusId === remote.kycStatusId &&
             prev.emailVerified === remote.emailVerified &&
             prev.phoneVerified === remote.phoneVerified &&
             prev.referralBalance === remote.referralBalance &&
             prev.totalReferrals === remote.totalReferrals &&
+            prev.avatarUrl === remote.avatarUrl &&
             prev.passwordHash === (remote.passwordHash || prev.passwordHash)
           ) {
             return prev;
@@ -234,10 +245,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             ...prev,
             payIdVerified: remote.payIdVerified,
             accountLevel: remote.accountLevel || prev.accountLevel,
+            kycVerified: remote.kycVerified ?? prev.kycVerified,
+            kycStatus: remote.kycStatus || prev.kycStatus,
+            kycRejectionReason: remote.kycRejectionReason ?? prev.kycRejectionReason,
+            kycStatusId: remote.kycStatusId || prev.kycStatusId,
             emailVerified: remote.emailVerified ?? prev.emailVerified,
             phoneVerified: remote.phoneVerified ?? prev.phoneVerified,
             referralBalance: remote.referralBalance ?? prev.referralBalance,
             totalReferrals: remote.totalReferrals ?? prev.totalReferrals,
+            avatarUrl: remote.avatarUrl !== undefined ? remote.avatarUrl : prev.avatarUrl,
             passwordHash: remote.passwordHash || prev.passwordHash,
           };
           try {
@@ -523,6 +539,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         avatarUrl: found.avatarUrl,
         referralCode: found.referralCode || found.email.split('@')[0].toLowerCase(),
         payIdVerified: found.payIdVerified,
+        kycVerified: found.kycVerified ?? false,
+        kycStatus: found.kycStatus || (found.kycVerified ? 'verified' : 'unverified'),
+        kycRejectionReason: found.kycRejectionReason,
+        kycStatusId: found.kycStatusId,
         emailVerified: true,
         phoneVerified: true,
         authMethod: resolvedAuthMethod,
@@ -657,6 +677,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         totalReferrals: 0,
         accountLevel: 'Basic',
         referralCode: personalCode,
+        kycVerified: false,
+        kycStatus: 'unverified',
         emailVerified: isAdminEmail ? true : method === 'email' ? firebaseEmailVerified : false,
         phoneVerified: isAdminEmail ? true : false,
         authMethod: method,

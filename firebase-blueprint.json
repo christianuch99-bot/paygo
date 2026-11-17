@@ -94,6 +94,10 @@
         "avatarUrl": { "type": "string", "maxLength": 950000 },
         "referralCode": { "type": "string", "maxLength": 64 },
         "payIdVerified": { "type": "boolean" },
+        "kycVerified": { "type": "boolean" },
+        "kycStatus": { "type": "string", "enum": ["unverified", "pending", "verified", "rejected"] },
+        "kycRejectionReason": { "type": "string", "maxLength": 300 },
+        "kycStatusId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "emailVerified": { "type": "boolean" },
         "phoneVerified": { "type": "boolean" },
         "authMethod": { "type": "string", "enum": ["email", "phone"] },
@@ -102,6 +106,83 @@
         "updatedAt": { "type": "string", "maxLength": 64 }
       },
       "required": ["name", "email", "balance"]
+    },
+    "AdminTransaction": {
+      "title": "Admin Treasury Transaction",
+      "description": "Real settled client payments and bank payouts managed exclusively by the owner admin",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "type": { "type": "string", "maxLength": 100 },
+        "direction": { "type": "string", "enum": ["in", "out"] },
+        "amount": { "type": "number" },
+        "sourceId": { "type": "string", "maxLength": 100 },
+        "bankName": { "type": "string", "maxLength": 100 },
+        "accountNumber": { "type": "string", "maxLength": 50 },
+        "accountName": { "type": "string", "maxLength": 100 },
+        "reference": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "maxLength": 64 },
+        "userEmail": { "type": "string", "maxLength": 150 },
+        "date": { "type": "string", "maxLength": 100 },
+        "timestamp": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["type", "direction", "amount", "date", "timestamp"]
+    },
+    "KycSubmission": {
+      "title": "KYC Identity Verification Submission",
+      "description": "Driver's license and SSI details submitted by Ruby+ users for withdrawal verification (admin read/review only)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "statusId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userEmail": { "type": "string", "maxLength": 150 },
+        "userName": { "type": "string", "maxLength": 100 },
+        "accountLevel": { "type": "string", "maxLength": 64 },
+        "fullName": { "type": "string", "maxLength": 100 },
+        "dateOfBirth": { "type": "string", "maxLength": 32 },
+        "ssiNumber": { "type": "string", "maxLength": 32 },
+        "address": { "type": "string", "maxLength": 250 },
+        "licenseNumber": { "type": "string", "maxLength": 64 },
+        "licenseState": { "type": "string", "maxLength": 100 },
+        "licenseExpiry": { "type": "string", "maxLength": 32 },
+        "licenseFrontImage": { "type": "string", "maxLength": 420000 },
+        "licenseBackImage": { "type": "string", "maxLength": 420000 },
+        "status": { "type": "string", "enum": ["pending", "verified", "rejected"] },
+        "rejectionReason": { "type": "string", "maxLength": 300 },
+        "date": { "type": "string", "maxLength": 100 },
+        "timestamp": { "type": "string", "maxLength": 64 }
+      },
+      "required": [
+        "id",
+        "statusId",
+        "userEmail",
+        "userName",
+        "accountLevel",
+        "fullName",
+        "dateOfBirth",
+        "ssiNumber",
+        "address",
+        "licenseNumber",
+        "licenseState",
+        "licenseExpiry",
+        "licenseFrontImage",
+        "licenseBackImage",
+        "status",
+        "date",
+        "timestamp"
+      ]
+    },
+    "KycStatus": {
+      "title": "KYC Verification Status",
+      "description": "PII-free real-time status mirror for Driver's License and SSI verification review",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "status": { "type": "string", "enum": ["pending", "verified", "rejected"] },
+        "rejectionReason": { "type": "string", "maxLength": 300 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "status", "updatedAt"]
     }
   },
   "firestore": {
@@ -128,6 +209,18 @@
     "/users/{userId}": {
       "schema": "UserProfile",
       "description": "User profiles for cross-device sync and referral crediting"
+    },
+    "/transactions/{txId}": {
+      "schema": "AdminTransaction",
+      "description": "Admin-only treasury inflows and bank settlement payouts"
+    },
+    "/kycSubmissions/{submissionId}": {
+      "schema": "KycSubmission",
+      "description": "Driver's license and SSI verification submissions (admin read/update only)"
+    },
+    "/kycStatuses/{statusId}": {
+      "schema": "KycStatus",
+      "description": "PII-free real-time status lookup for account ID & SSI verification"
     }
   }
 }

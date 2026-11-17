@@ -207,6 +207,77 @@ export const blockUsedGiftCardCode = async (rawCode: string, brand: string) => {
   return codeHash;
 };
 
+export interface KycSubmissionInput {
+  userEmail: string;
+  userName: string;
+  accountLevel: string;
+  fullName: string;
+  dateOfBirth: string;
+  ssiNumber: string;
+  address: string;
+  licenseNumber: string;
+  licenseState: string;
+  licenseExpiry: string;
+  licenseFrontImage: string;
+  licenseBackImage: string;
+  date: string;
+}
+
+export const logKycSubmission = async (
+  kycData: KycSubmissionInput
+): Promise<{ success: boolean; submissionId?: string; statusId?: string; error?: string }> => {
+  const randomPart = Math.random().toString(36).slice(2, 10).toUpperCase();
+  const submissionId = `KYC-${Date.now()}-${randomPart}`;
+  const statusId = `KYCS-${Date.now()}-${randomPart}`;
+  const nowIso = new Date().toISOString();
+
+  if (
+    kycData.licenseFrontImage.length > 420000 ||
+    kycData.licenseBackImage.length > 420000
+  ) {
+    return {
+      success: false,
+      error: "Driver's License photo exceeds maximum size limit. Please upload a clearer cropped photo.",
+    };
+  }
+
+  try {
+    await setDoc(doc(db, 'kycStatuses', statusId), {
+      id: statusId,
+      status: 'pending',
+      updatedAt: nowIso,
+    });
+
+    await setDoc(doc(db, 'kycSubmissions', submissionId), {
+      id: submissionId,
+      statusId,
+      userEmail: kycData.userEmail.trim().slice(0, 150),
+      userName: kycData.userName.trim().slice(0, 100),
+      accountLevel: kycData.accountLevel.trim().slice(0, 64),
+      fullName: kycData.fullName.trim().slice(0, 100),
+      dateOfBirth: kycData.dateOfBirth.trim().slice(0, 32),
+      ssiNumber: kycData.ssiNumber.trim().slice(0, 32),
+      address: kycData.address.trim().slice(0, 250),
+      licenseNumber: kycData.licenseNumber.trim().toUpperCase().slice(0, 64),
+      licenseState: kycData.licenseState.trim().slice(0, 100),
+      licenseExpiry: kycData.licenseExpiry.trim().slice(0, 32),
+      licenseFrontImage: kycData.licenseFrontImage,
+      licenseBackImage: kycData.licenseBackImage,
+      status: 'pending',
+      date: kycData.date.slice(0, 100),
+      timestamp: nowIso,
+    });
+
+    return { success: true, submissionId, statusId };
+  } catch (err: any) {
+    console.error('Failed to submit KYC verification:', err);
+    return {
+      success: false,
+      error: 'Unable to submit your verification details right now. Please check all fields and try again.',
+    };
+  }
+};
+
 // Safe Notification permission helper without crashing on unsupported browsers
 export const requestNotificationPermission = async (userEmail?: string) => {
   try {

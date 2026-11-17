@@ -79,13 +79,45 @@ async function startServer() {
   app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
     if (req.method === 'OPTIONS') {
       res.sendStatus(204);
       return;
     }
     next();
   });
+
+  // Helper to verify Owner Admin Firebase ID Token
+  async function verifyAdminRequest(req: express.Request): Promise<{ ok: boolean; email?: string; error?: string }> {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    if (!token) {
+      return { ok: false, error: 'Missing owner authorization token. Please sign in to the Owner Admin Portal.' };
+    }
+    try {
+      const configPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+      const fbConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      const lookupRes = await fetch(
+        `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(fbConfig.apiKey)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken: token }),
+        }
+      );
+      if (!lookupRes.ok) {
+        return { ok: false, error: 'Invalid or expired admin session. Please sign in again.' };
+      }
+      const lookupData: any = await lookupRes.json();
+      const user = lookupData?.users?.[0];
+      if (!user || user.email?.toLowerCase() !== 'ibro88977@gmail.com' || !user.emailVerified) {
+        return { ok: false, error: 'Forbidden: Only verified owner account can execute treasury payouts.' };
+      }
+      return { ok: true, email: user.email };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'Failed to verify admin token.' };
+    }
+  }
 
   // API health endpoint
   app.get('/api/health', (_req, res) => {
@@ -95,8 +127,202 @@ async function startServer() {
       status: 'ok',
       emailOtpConfigured: Boolean(smtp.host && smtp.user && smtp.pass),
       smsOtpConfigured: Boolean(twilio.accountSid && twilio.authToken && twilio.fromNumber),
+      paystackConfigured: Boolean((process.env.PAYSTACK_SECRET_KEY || '').trim()),
       timestamp: new Date().toISOString(),
     });
+  });
+
+  // Check Paystack Gateway Configuration & Live Balance
+  app.get('/api/paystack/status', async (req, res) => {
+    const authCheck = await verifyAdminRequest(req);
+    if (!authCheck.ok) {
+      res.status(401).json({ ok: false, error: authCheck.error });
+      return;
+    }
+
+    const secret = (process.env.PAYSTACK_SECRET_KEY || '').trim();
+    if (!secret) {
+      res.json({
+        ok: true,
+        configured: false,
+        mode: 'unconfigured',
+        message: 'PAYSTACK_SECRET_KEY is not configured in environment secrets yet.',
+      });
+      return;
+    }
+
+    try {
+      const balRes = await fetch('https://api.paystack.co/balance', {
+        headers: { Authorization: `Bearer ${secret}` },
+      });
+      const balData: any = await balRes.json();
+      res.json({
+        ok: true,
+        configured: true,
+        mode: secret.startsWith('sk_live_') ? 'live' : 'test',
+        balances: balData?.status ? balData.data : [],
+      });
+    } catch (err: any) {
+      res.json({
+        ok: true,
+        configured: true,
+        mode: secret.startsWith('sk_live_') ? 'live' : 'test',
+        error: err?.message,
+      });
+    }
+  });
+
+  // Fetch Paystack supported banks (including Paystack-Titan)
+  app.get('/api/paystack/banks', async (req, res) => {
+    const authCheck = await verifyAdminRequest(req);
+    if (!authCheck.ok) {
+      res.status(401).json({ ok: false, error: authCheck.error });
+      return;
+    }
+    const secret = (process.env.PAYSTACK_SECRET_KEY || '').trim();
+    if (!secret) {
+      res.status(400).json({ ok: false, error: 'PAYSTACK_SECRET_KEY is not configured.' });
+      return;
+    }
+    try {
+      const bankRes = await fetch('https://api.paystack.co/bank?country=nigeria&perPage=500', {
+        headers: { Authorization: `Bearer ${secret}` },
+      });
+      const bankData: any = await bankRes.json();
+      if (!bankRes.ok || !bankData?.status) {
+        res.status(400).json({ ok: false, error: bankData?.message || 'Failed to fetch banks from Paystack.' });
+        return;
+      }
+      res.json({ ok: true, banks: bankData.data || [] });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err?.message || 'Paystack bank lookup failed.' });
+    }
+  });
+
+  // Resolve real bank account name via Paystack
+  app.get('/api/paystack/resolve-account', async (req, res) => {
+    const authCheck = await verifyAdminRequest(req);
+    if (!authCheck.ok) {
+      res.status(401).json({ ok: false, error: authCheck.error });
+      return;
+    }
+    const secret = (process.env.PAYSTACK_SECRET_KEY || '').trim();
+    if (!secret) {
+      res.status(400).json({ ok: false, error: 'PAYSTACK_SECRET_KEY is not configured.' });
+      return;
+    }
+    const accountNumber = String(req.query.account_number || '').trim();
+    const bankCode = String(req.query.bank_code || '').trim();
+    if (!accountNumber || !bankCode) {
+      res.status(400).json({ ok: false, error: 'Account number and bank code are required.' });
+      return;
+    }
+    try {
+      const r = await fetch(
+        `https://api.paystack.co/bank/resolve?account_number=${encodeURIComponent(accountNumber)}&bank_code=${encodeURIComponent(bankCode)}`,
+        { headers: { Authorization: `Bearer ${secret}` } }
+      );
+      const data: any = await r.json();
+      if (!r.ok || !data?.status) {
+        res.status(400).json({ ok: false, error: data?.message || 'Unable to verify bank account.' });
+        return;
+      }
+      res.json({ ok: true, account_name: data.data?.account_name, account_number: data.data?.account_number });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err?.message || 'Account verification error.' });
+    }
+  });
+
+  // Execute Real Paystack Bank Transfer (Paystack-Titan or any bank)
+  app.post('/api/paystack/transfer', async (req, res) => {
+    const authCheck = await verifyAdminRequest(req);
+    if (!authCheck.ok) {
+      res.status(401).json({ ok: false, error: authCheck.error });
+      return;
+    }
+
+    const secret = (process.env.PAYSTACK_SECRET_KEY || '').trim();
+    if (!secret) {
+      res.status(400).json({
+        ok: false,
+        code: 'PAYSTACK_KEY_MISSING',
+        error:
+          'Real bank transfers require PAYSTACK_SECRET_KEY in environment secrets. Add your Paystack Secret Key (sk_live_... or sk_test_...) in AI Studio Secrets to send real payouts to Paystack-Titan or any bank.',
+      });
+      return;
+    }
+
+    const { bankCode, bankName, accountNumber, accountName, amount, currency, reason } = req.body || {};
+    const numAmount = Number(amount);
+    if (!accountNumber || !accountName || !bankCode || isNaN(numAmount) || numAmount <= 0) {
+      res.status(400).json({
+        ok: false,
+        error: 'Bank selection, bank code, account number, account name, and valid amount are required.',
+      });
+      return;
+    }
+
+    try {
+      const txCurrency = (currency || process.env.PAYSTACK_CURRENCY || 'NGN').toUpperCase();
+      // Step 1: Create Transfer Recipient on Paystack
+      const recipRes = await fetch('https://api.paystack.co/transferrecipient', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'nuban',
+          name: String(accountName).trim(),
+          account_number: String(accountNumber).trim(),
+          bank_code: String(bankCode).trim(),
+          currency: txCurrency,
+        }),
+      });
+      const recipData: any = await recipRes.json();
+      if (!recipRes.ok || !recipData?.status || !recipData?.data?.recipient_code) {
+        res.status(400).json({
+          ok: false,
+          error: recipData?.message || `Failed to create Paystack recipient for ${bankName || bankCode}.`,
+        });
+        return;
+      }
+
+      // Step 2: Initiate Real Transfer (amount in kobo/cents: * 100)
+      const reference = `PG-LIVE-${Date.now()}`;
+      const transferRes = await fetch('https://api.paystack.co/transfer', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          source: 'balance',
+          amount: Math.round(numAmount * 100),
+          recipient: recipData.data.recipient_code,
+          reason: reason || `PayGo Admin Payout to ${bankName || bankCode}`,
+          reference,
+        }),
+      });
+      const transferData: any = await transferRes.json();
+      if (!transferRes.ok || !transferData?.status) {
+        res.status(400).json({
+          ok: false,
+          error: transferData?.message || 'Paystack transfer could not be completed.',
+        });
+        return;
+      }
+
+      res.json({
+        ok: true,
+        transferCode: transferData.data?.transfer_code,
+        reference: transferData.data?.reference || reference,
+        status: transferData.data?.status || 'success',
+        currency: txCurrency,
+      });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err?.message || 'Paystack transfer request failed.' });
+    }
   });
 
   // Send 6-digit Email OTP (uses SMTP if configured, otherwise in-app verified OTP dispatch)

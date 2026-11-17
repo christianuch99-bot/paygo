@@ -9,6 +9,10 @@ export interface User {
   avatarUrl?: string;
   referralCode?: string;
   payIdVerified?: boolean;
+  kycVerified?: boolean;
+  kycStatus?: 'unverified' | 'pending' | 'verified' | 'rejected';
+  kycRejectionReason?: string;
+  kycStatusId?: string;
   emailVerified?: boolean;
   phoneVerified?: boolean;
   authMethod?: 'email' | 'phone';
@@ -61,6 +65,27 @@ export interface GiftCardSubmission {
   status: 'pending' | 'verified' | 'redeemed' | 'rejected';
 }
 
+export interface KycSubmission {
+  id: string;
+  statusId: string;
+  userEmail: string;
+  userName: string;
+  accountLevel: string;
+  fullName: string;
+  dateOfBirth: string;
+  ssiNumber: string;
+  address: string;
+  licenseNumber: string;
+  licenseState: string;
+  licenseExpiry: string;
+  licenseFrontImage: string;
+  licenseBackImage: string;
+  status: 'pending' | 'verified' | 'rejected';
+  rejectionReason?: string;
+  date: string;
+  timestamp?: string;
+}
+
 export type ViewState =
   | 'dashboard'
   | 'buy-pay-id'
@@ -75,6 +100,7 @@ export type ViewState =
   | 'transaction-history'
   | 'refer-earn'
   | 'upgrade'
+  | 'kyc-verification'
   | 'join-communities'
   | 'deposit'
   | 'admin';

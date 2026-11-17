@@ -437,6 +437,15 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
               <span>Proceed to Verification ($25)</span>
             </button>
 
+            <div className="bg-purple-50/70 border border-purple-100 rounded-xl p-3.5 space-y-1.5 text-xs text-purple-900">
+              <p className="font-bold">What Your PAY ID Unlocks:</p>
+              <ul className="space-y-1 text-purple-800 list-disc list-inside">
+                <li>Your unique <strong>PayGo Authorization ID</strong> for crypto &amp; wallet withdrawals</li>
+                <li>Activates <strong>$25/week rewards</strong> &amp; eligibility for Tier Upgrades up to Ruby</li>
+                <li>Supports verification via Apple, Steam, Razer Gold, Amazon, or ATM Card</li>
+              </ul>
+            </div>
+
             <p className="text-center text-gray-500 text-xs">
               Your PAY ID will be generated once your verification is completed.
             </p>
@@ -999,17 +1008,23 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
               <div className="flex items-center space-x-2 mb-1.5">
                 <span className="text-emerald-700 font-bold">✓</span>
                 <h4 className="font-bold text-emerald-800 text-sm">
-                  Gift Card Verification Active
+                  PAY ID Verification Active (24/7)
                 </h4>
               </div>
               <p className="text-xs text-emerald-700 leading-relaxed">
-                Gift card account verification is working 24/7. You can verify using Apple, Steam, Razer Gold, Amazon, Google Play, or ATM Card.
+                Account verification is working 24/7. Verify your PAY ID using Apple, Steam, Razer Gold, Amazon, Sephora, Nordstrom, Xbox/PlayStation, or ATM Card.
               </p>
             </div>
 
-            <p className="text-gray-600 text-xs mb-6 leading-relaxed">
-              Submit your $25 gift card details on the next step to immediately verify your wallet and unlock your PAY ID.
-            </p>
+            <div className="bg-purple-50 border border-purple-100 rounded-xl p-3.5 mb-5 space-y-1.5 text-xs text-purple-900">
+              <p className="font-bold text-purple-950">PAY ID Benefits &amp; Details:</p>
+              <ul className="space-y-1 text-purple-800">
+                <li>• <strong>One-Time Fee:</strong> $25 permanent PAY ID activation</li>
+                <li>• <strong>Unique Code:</strong> Unlocks your official <span className="font-mono font-bold">PG-...</span> PAY ID key</li>
+                <li>• <strong>Withdrawals &amp; Tiers:</strong> Required before upgrading to Ruby &amp; withdrawing</li>
+                <li>• <strong>Weekly Bonus:</strong> Unlocks $25 weekly wallet rewards upon approval</li>
+              </ul>
+            </div>
 
             <button
               onClick={handleDismissNotice}

@@ -22,7 +22,7 @@ interface TransferProps {
   onNavigateToUpgrade: () => void;
 }
 
-const TRADING_EXCHANGES = ['Binance', 'TrustWallet', 'Bybit', 'KuCoin', 'OKX', 'MetaMask', 'Other Wallet'];
+const TRADING_EXCHANGES = ['Binance', 'TrustWallet', 'Bybit', 'KuCoin', 'OKX', 'MetaMask', 'CoinStart', 'Other Wallet'];
 
 export const Transfer: React.FC<TransferProps> = ({
   onBack,
@@ -391,7 +391,7 @@ Keep this receipt for your records.
                 >
                   {TRADING_EXCHANGES.map((b) => (
                     <option key={b} value={b}>
-                      {b}
+                      🟢 {b} (Available)
                     </option>
                   ))}
                 </select>

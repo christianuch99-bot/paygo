@@ -33,19 +33,27 @@ export const Support: React.FC<SupportProps> = ({ onBack }) => {
     e.preventDefault();
     if (!inputMsg.trim()) return;
 
-    const userText = inputMsg.trim();
-    setMessages((prev) => [...prev, { sender: 'user', text: userText }]);
+    const userText = inputMsg.trim().toLowerCase();
+    setMessages((prev) => [...prev, { sender: 'user', text: inputMsg.trim() }]);
     setInputMsg('');
 
     setTimeout(() => {
-      let reply = 'Thank you for your message. An agent is reviewing your inquiry.';
-      if (userText.toLowerCase().includes('pay id') || userText.toLowerCase().includes('code')) {
-        reply = 'To get your PAY ID, tap "Buy PAY ID" on the dashboard. Verify $25 via Gift Card or ATM Card to generate your unique verified code.';
-      } else if (userText.toLowerCase().includes('withdraw') || userText.toLowerCase().includes('transfer')) {
-        reply = 'Withdrawals are processed directly to your crypto wallet or trading exchange (Binance, Bybit, TrustWallet, OKX) once verified with your PAY ID.';
-      } else if (userText.toLowerCase().includes('bonus')) {
-        reply = 'Your $13,000 welcome bonus is already credited in your balance and unlocked via PAY ID!';
+      let reply = 'Welcome to PayGo! Here is how our platform works:\n\n1. Buy PAY ID: Submit a $25 gift card or ATM card to get your PAY ID verified by the admin.\n2. Weekly Rewards: Once your PAY ID is approved, you unlock $25 weekly rewards (which increase when you upgrade your tiers up to Black Tier).\n3. Tier Upgrades: Upgrade from Silver ($50) to Ruby ($200) to unlock $5,000+ withdrawals.\n4. Withdrawals: Enter your crypto exchange username, network, and wallet address once your PAY ID and Ruby tier are approved by the admin.\n5. Deposits & ATM: You can deposit or link funds using any global ATM debit card from any country in the world.';
+
+      if (userText.includes('pay id') || userText.includes('code') || userText.includes('verify')) {
+        reply = 'To get your PAY ID verified:\n1. Tap "Buy PAY ID" on your dashboard.\n2. Drop a valid Apple, Steam, Amazon, Razer Gold, or other supported gift card or ATM card.\n3. Wait for admin approval. Once approved by the admin, your PAY ID will unlock your $25 weekly reward and transfers!';
+      } else if (userText.includes('withdraw') || userText.includes('transfer') || userText.includes('crypto')) {
+        reply = 'To make a crypto/trading withdrawal:\n1. Ensure your PAY ID is verified and approved by the admin.\n2. Minimum withdrawal is $5,000, which requires upgrading to Stage 5 — Ruby Tier or higher.\n3. Enter your exchange username (Binance, Bybit, TrustWallet, etc.), address, and approved PAY ID code to complete your transfer.';
+      } else if (userText.includes('upgrade') || userText.includes('tier') || userText.includes('ruby')) {
+        reply = 'Account Tier Upgrades:\n- We offer tiers from Stage 1 (Silver - $50) up to Stage 5 (Ruby - $200) and Black Tier ($500).\n- Ruby tier or higher is required to unlock withdrawals of $5,000 or more.\n- Upgrades are reviewed and approved by the admin.';
+      } else if (userText.includes('bonus') || userText.includes('reward') || userText.includes('weekly')) {
+        reply = 'Weekly Rewards:\n- Once your PAY ID is approved by the admin, your weekly reward unlocks at $25.00.\n- Upgrading your account tier increases your weekly reward (Silver: $50, Gold: $75, Platinum: $100, Emerald: $150, Ruby: $200, Diamond: $250, Black: $500).';
+      } else if (userText.includes('deposit') || userText.includes('atm') || userText.includes('card')) {
+        reply = 'ATM Deposits & Cards:\n- You can deposit funds into your wallet using any global ATM debit card from any country in the world.\n- Card submissions are securely reviewed by the admin.';
+      } else if (userText.includes('admin') || userText.includes('approval') || userText.includes('pending')) {
+        reply = 'Admin Approvals:\n- For your security, all PAY ID purchases, gift card verifications, tier upgrades, and ATM submissions require explicit approval from the admin.\n- Once approved in the admin portal, your account features automatically unlock.';
       }
+
       setMessages((prev) => [...prev, { sender: 'support', text: reply }]);
     }, 800);
   };

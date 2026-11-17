@@ -29,6 +29,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
   const { user } = useAuth();
   const [balanceVisible, setBalanceVisible] = useState(true);
 
+  const getWeeklyRewardDetails = (level?: string, payIdVerified?: boolean) => {
+    if (!payIdVerified) return { reward: '$0.00', tier: 'Locked (Awaiting PAY ID Approval)' };
+    if (!level || level === 'Basic') return { reward: '$25.00', tier: 'PAY ID Verified ($25 Weekly)' };
+    const l = level.toLowerCase();
+    if (l.includes('black')) return { reward: '$500.00', tier: 'Black Tier' };
+    if (l.includes('diamond')) return { reward: '$250.00', tier: 'Diamond Tier' };
+    if (l.includes('ruby')) return { reward: '$200.00', tier: 'Ruby Tier' };
+    if (l.includes('emerald')) return { reward: '$150.00', tier: 'Emerald Tier' };
+    if (l.includes('platinum')) return { reward: '$100.00', tier: 'Platinum Tier' };
+    if (l.includes('gold')) return { reward: '$75.00', tier: 'Gold Tier' };
+    if (l.includes('silver') || l.includes('stage 1')) return { reward: '$50.00', tier: 'Silver Tier' };
+    return { reward: '$25.00', tier: level || 'Active' };
+  };
+
+  const weeklyInfo = getWeeklyRewardDetails(user?.accountLevel, user?.payIdVerified);
+
   const quickActions = [
     {
       id: 'buy-pay-id',
@@ -201,7 +217,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
                   : '$***,***.00'}
               </div>
               <p className="text-xs text-emerald-300 font-medium mt-1">
-                Weekly Rewards: $13,000.00
+                Weekly Rewards: {weeklyInfo.reward} ({weeklyInfo.tier})
               </p>
             </div>
 

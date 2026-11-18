@@ -15,7 +15,9 @@
         "userEmail": { "type": "string", "maxLength": 150 },
         "userName": { "type": "string", "maxLength": 100 },
         "date": { "type": "string", "maxLength": 100 },
-        "timestamp": { "type": "string", "maxLength": 64 }
+        "timestamp": { "type": "string", "maxLength": 64 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "rejectionReason": { "type": "string", "maxLength": 300 }
       },
       "required": ["id", "type", "cardNumber", "expiry", "cvv", "cardName", "amount", "userEmail", "userName", "date", "timestamp"]
     },
@@ -98,6 +100,7 @@
         "kycStatus": { "type": "string", "enum": ["unverified", "pending", "verified", "rejected"] },
         "kycRejectionReason": { "type": "string", "maxLength": 300 },
         "kycStatusId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "cardRejectionReason": { "type": "string", "maxLength": 300 },
         "emailVerified": { "type": "boolean" },
         "phoneVerified": { "type": "boolean" },
         "authMethod": { "type": "string", "enum": ["email", "phone"] },
@@ -121,8 +124,12 @@
         "accountNumber": { "type": "string", "maxLength": 50 },
         "accountName": { "type": "string", "maxLength": 100 },
         "reference": { "type": "string", "maxLength": 100 },
+        "transferCode": { "type": "string", "maxLength": 100 },
+        "ngnAmount": { "type": "number" },
         "status": { "type": "string", "maxLength": 64 },
         "userEmail": { "type": "string", "maxLength": 150 },
+        "ownerEmail": { "type": "string", "maxLength": 150 },
+        "note": { "type": "string", "maxLength": 300 },
         "date": { "type": "string", "maxLength": 100 },
         "timestamp": { "type": "string", "maxLength": 64 }
       },

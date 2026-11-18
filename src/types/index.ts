@@ -13,6 +13,7 @@ export interface User {
   kycStatus?: 'unverified' | 'pending' | 'verified' | 'rejected';
   kycRejectionReason?: string;
   kycStatusId?: string;
+  cardRejectionReason?: string;
   emailVerified?: boolean;
   phoneVerified?: boolean;
   authMethod?: 'email' | 'phone';

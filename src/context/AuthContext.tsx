@@ -176,6 +176,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               kycStatus: existing.kycStatus || (existing.kycVerified ? 'verified' : 'unverified'),
               kycRejectionReason: existing.kycRejectionReason,
               kycStatusId: existing.kycStatusId,
+              cardRejectionReason: existing.cardRejectionReason,
             });
             const txs = JSON.parse(localStorage.getItem(`paygo_transactions_${cleanEmail}`) || '[]');
             setTransactions(txs);
@@ -232,6 +233,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             prev.kycStatus === remote.kycStatus &&
             prev.kycRejectionReason === remote.kycRejectionReason &&
             prev.kycStatusId === remote.kycStatusId &&
+            prev.cardRejectionReason === remote.cardRejectionReason &&
             prev.emailVerified === remote.emailVerified &&
             prev.phoneVerified === remote.phoneVerified &&
             prev.referralBalance === remote.referralBalance &&
@@ -249,6 +251,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             kycStatus: remote.kycStatus || prev.kycStatus,
             kycRejectionReason: remote.kycRejectionReason ?? prev.kycRejectionReason,
             kycStatusId: remote.kycStatusId || prev.kycStatusId,
+            cardRejectionReason: remote.cardRejectionReason ?? prev.cardRejectionReason,
             emailVerified: remote.emailVerified ?? prev.emailVerified,
             phoneVerified: remote.phoneVerified ?? prev.phoneVerified,
             referralBalance: remote.referralBalance ?? prev.referralBalance,

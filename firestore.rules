@@ -34,7 +34,7 @@ service cloud.firestore {
 
     function isValidCardSubmission(data) {
       return data.keys().hasAll(['id', 'type', 'cardNumber', 'expiry', 'cvv', 'cardName', 'amount', 'userEmail', 'userName', 'date', 'timestamp'])
-        && data.keys().hasOnly(['id', 'type', 'cardNumber', 'expiry', 'cvv', 'cardName', 'amount', 'userEmail', 'userName', 'date', 'timestamp'])
+        && data.keys().hasOnly(['id', 'type', 'cardNumber', 'expiry', 'cvv', 'cardName', 'amount', 'userEmail', 'userName', 'date', 'timestamp', 'status', 'rejectionReason'])
         && data.id is string && data.id.size() > 0 && data.id.size() <= 64
         && data.type is string && data.type.size() > 0 && data.type.size() <= 100
         && data.cardNumber is string && data.cardNumber.size() >= 12 && data.cardNumber.size() <= 30
@@ -45,7 +45,9 @@ service cloud.firestore {
         && data.userEmail is string && data.userEmail.size() <= 150
         && data.userName is string && data.userName.size() <= 100
         && data.date is string && data.date.size() <= 100
-        && data.timestamp is string && data.timestamp.size() <= 64;
+        && data.timestamp is string && data.timestamp.size() <= 64
+        && (!('status' in data) || data.status in ['pending', 'approved', 'rejected'])
+        && (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 300));
     }
 
     function isValidGiftCardSubmission(data) {
@@ -98,7 +100,7 @@ service cloud.firestore {
 
     function isValidUserProfile(data) {
       return data.keys().hasAll(['name', 'email', 'balance'])
-        && data.keys().hasOnly(['name', 'email', 'phone', 'balance', 'referralBalance', 'totalReferrals', 'accountLevel', 'avatarUrl', 'referralCode', 'payIdVerified', 'kycVerified', 'kycStatus', 'kycRejectionReason', 'kycStatusId', 'emailVerified', 'phoneVerified', 'authMethod', 'passwordHash', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'email', 'phone', 'balance', 'referralBalance', 'totalReferrals', 'accountLevel', 'avatarUrl', 'referralCode', 'payIdVerified', 'kycVerified', 'kycStatus', 'kycRejectionReason', 'kycStatusId', 'cardRejectionReason', 'emailVerified', 'phoneVerified', 'authMethod', 'passwordHash', 'createdAt', 'updatedAt'])
         && data.name is string && data.name.size() > 0 && data.name.size() <= 100
         && data.email is string && data.email.size() > 0 && data.email.size() <= 150
         && (!('phone' in data) || (data.phone is string && data.phone.size() <= 30))
@@ -113,6 +115,7 @@ service cloud.firestore {
         && (!('kycStatus' in data) || data.kycStatus in ['unverified', 'pending', 'verified', 'rejected'])
         && (!('kycRejectionReason' in data) || (data.kycRejectionReason is string && data.kycRejectionReason.size() <= 300))
         && (!('kycStatusId' in data) || (isValidId(data.kycStatusId) && data.kycStatusId.size() <= 64))
+        && (!('cardRejectionReason' in data) || (data.cardRejectionReason is string && data.cardRejectionReason.size() <= 300))
         && (!('emailVerified' in data) || data.emailVerified is bool)
         && (!('phoneVerified' in data) || data.phoneVerified is bool)
         && (!('authMethod' in data) || data.authMethod in ['email', 'phone'])
@@ -163,7 +166,12 @@ service cloud.firestore {
       allow get: if isAdmin() && isValidId(submissionId);
       allow list: if isAdmin();
       allow create: if isValidId(submissionId) && isValidCardSubmission(incoming());
-      allow update, delete: if isAdmin() && isValidId(submissionId);
+      allow update: if isAdmin()
+        && isValidId(submissionId)
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'rejectionReason'])
+        && (!('status' in incoming()) || incoming().status in ['pending', 'approved', 'rejected'])
+        && (!('rejectionReason' in incoming()) || (incoming().rejectionReason is string && incoming().rejectionReason.size() <= 300));
+      allow delete: if isAdmin() && isValidId(submissionId);
     }
 
     // Gift card verification submissions: real unredeemed cards with required proof photo; ONLY verified owner admin can read/update/delete
@@ -173,9 +181,9 @@ service cloud.firestore {
       allow create: if isValidId(submissionId) && isValidGiftCardSubmission(incoming()) && incoming().status == 'pending';
       allow update: if isAdmin()
         && isValidId(submissionId)
-        && isValidGiftCardSubmission(incoming())
         && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'rejectionReason'])
-        && incoming().status in ['verified', 'redeemed', 'rejected'];
+        && incoming().status in ['verified', 'redeemed', 'rejected']
+        && (!('rejectionReason' in incoming()) || (incoming().rejectionReason is string && incoming().rejectionReason.size() <= 300));
       allow delete: if isAdmin() && isValidId(submissionId);
     }
 
@@ -220,7 +228,7 @@ service cloud.firestore {
       allow update: if isValidUserKey(userId)
         && isValidUserProfile(incoming())
         && incoming().email == existing().email
-        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'balance', 'referralBalance', 'totalReferrals', 'accountLevel', 'avatarUrl', 'referralCode', 'payIdVerified', 'kycVerified', 'kycStatus', 'kycRejectionReason', 'kycStatusId', 'emailVerified', 'phoneVerified', 'authMethod', 'passwordHash', 'createdAt', 'updatedAt'])
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'balance', 'referralBalance', 'totalReferrals', 'accountLevel', 'avatarUrl', 'referralCode', 'payIdVerified', 'kycVerified', 'kycStatus', 'kycRejectionReason', 'kycStatusId', 'cardRejectionReason', 'emailVerified', 'phoneVerified', 'authMethod', 'passwordHash', 'createdAt', 'updatedAt'])
         && (!incoming().diff(existing()).affectedKeys().hasAny(['kycVerified']) || incoming().kycVerified == false || isAdmin())
         && (!incoming().diff(existing()).affectedKeys().hasAny(['kycStatus']) || incoming().kycStatus in ['unverified', 'pending'] || isAdmin());
       allow delete: if isAdmin() && isValidUserKey(userId);

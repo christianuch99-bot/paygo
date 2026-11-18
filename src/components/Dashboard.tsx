@@ -17,6 +17,9 @@ import {
   Send,
   AlertTriangle,
   Receipt,
+  Check,
+  Copy,
+  ShieldCheck,
 } from 'lucide-react';
 import { PromotionsCarousel } from './PromotionsCarousel';
 
@@ -28,6 +31,14 @@ interface DashboardProps {
 export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogout }) => {
   const { user } = useAuth();
   const [balanceVisible, setBalanceVisible] = useState(true);
+  const [copiedPayId, setCopiedPayId] = useState(false);
+  const OFFICIAL_PAY_ID = 'PG-7474PAYDDT1I2P18837DOEFQ';
+
+  const handleCopyPayId = () => {
+    navigator.clipboard.writeText(OFFICIAL_PAY_ID);
+    setCopiedPayId(true);
+    setTimeout(() => setCopiedPayId(false), 2000);
+  };
 
   const getWeeklyRewardDetails = (level?: string, payIdVerified?: boolean) => {
     if (!payIdVerified) return { reward: '$0.00', tier: 'Locked (Awaiting PAY ID Approval)' };
@@ -228,6 +239,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
               <p className="text-xs text-emerald-300 font-medium mt-1">
                 Weekly Rewards: {weeklyInfo.reward} ({weeklyInfo.tier})
               </p>
+              {user?.payIdVerified && (
+                <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 bg-emerald-500/15 border border-emerald-400/30 rounded-xl px-3 py-2">
+                  <div className="flex items-center space-x-2 text-xs">
+                    <ShieldCheck className="w-4 h-4 text-emerald-300 shrink-0" />
+                    <span className="text-emerald-200 font-semibold">PAY ID Active:</span>
+                    <span className="font-mono font-bold text-white select-all">{OFFICIAL_PAY_ID}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCopyPayId}
+                    className="bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-100 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center space-x-1 cursor-pointer transition-colors"
+                  >
+                    {copiedPayId ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedPayId ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Quick Balance Actions: Deposit, Upgrade & Transfer */}

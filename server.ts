@@ -127,201 +127,858 @@ async function startServer() {
       status: 'ok',
       emailOtpConfigured: Boolean(smtp.host && smtp.user && smtp.pass),
       smsOtpConfigured: Boolean(twilio.accountSid && twilio.authToken && twilio.fromNumber),
-      paystackConfigured: Boolean((process.env.PAYSTACK_SECRET_KEY || '').trim()),
+      payoutProviders: {
+        flutterwave: Boolean((process.env.FLW_SECRET_KEY || '').trim()),
+        korapay: Boolean((process.env.KORAPAY_SECRET_KEY || '').trim()),
+        monnify: Boolean(
+          (process.env.MONNIFY_API_KEY || '').trim() &&
+            (process.env.MONNIFY_SECRET_KEY || '').trim()
+        ),
+        kuda: Boolean(
+          (process.env.KUDA_EMAIL || '').trim() &&
+            (process.env.KUDA_API_KEY || '').trim()
+        ),
+      },
       timestamp: new Date().toISOString(),
     });
   });
 
-  // Check Paystack Gateway Configuration & Live Balance
-  app.get('/api/paystack/status', async (req, res) => {
+  // Helper: Get Monnify Bearer Access Token
+  const getMonnifyAccessToken = async () => {
+    const apiKey = (process.env.MONNIFY_API_KEY || '').trim();
+    const secretKey = (process.env.MONNIFY_SECRET_KEY || '').trim();
+    const baseUrl = (process.env.MONNIFY_BASE_URL || 'https://api.monnify.com').replace(/\/+$/, '');
+    if (!apiKey || !secretKey) {
+      return { ok: false as const, error: 'MONNIFY_API_KEY and MONNIFY_SECRET_KEY are not configured.' };
+    }
+    const basicAuth = Buffer.from(`${apiKey}:${secretKey}`).toString('base64');
+    const loginRes = await fetch(`${baseUrl}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${basicAuth}` },
+    });
+    const loginData: any = await loginRes.json();
+    const token = loginData?.responseBody?.accessToken;
+    if (!loginRes.ok || !loginData?.requestSuccessful || !token) {
+      return {
+        ok: false as const,
+        error: loginData?.responseMessage || 'Monnify authentication failed. Check MONNIFY_API_KEY & MONNIFY_SECRET_KEY.',
+      };
+    }
+    return {
+      ok: true as const,
+      token,
+      baseUrl,
+      mode: baseUrl.includes('sandbox') ? ('test' as const) : ('live' as const),
+    };
+  };
+
+  // Helper: Get Kuda Access Token
+  const getKudaAccessToken = async () => {
+    const email = (process.env.KUDA_EMAIL || '').trim();
+    const apiKey = (process.env.KUDA_API_KEY || '').trim();
+    if (!email || !apiKey) {
+      return { ok: false as const, error: 'KUDA_EMAIL and KUDA_API_KEY are not configured.' };
+    }
+    try {
+      const r = await fetch('https://kuda-openapi.kudabank.com/v2.1/Account/GetToken', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, apiKey }),
+      });
+      const d: any = await r.json();
+      const token = d?.data?.token || d?.token || (typeof d === 'string' ? d : '');
+      if (!r.ok || !token) {
+        return { ok: false as const, error: d?.message || 'Kuda authentication failed. Check KUDA_EMAIL & KUDA_API_KEY.' };
+      }
+      return { ok: true as const, token };
+    } catch (err: any) {
+      return { ok: false as const, error: err?.message || 'Could not reach Kuda API.' };
+    }
+  };
+
+  // Check Live Payout Gateways (Flutterwave, Korapay, Monnify) & Merchant Wallet Balances
+  app.get('/api/payout/status', async (req, res) => {
     const authCheck = await verifyAdminRequest(req);
     if (!authCheck.ok) {
       res.status(401).json({ ok: false, error: authCheck.error });
       return;
     }
 
-    const secret = (process.env.PAYSTACK_SECRET_KEY || '').trim();
-    if (!secret) {
-      res.json({
-        ok: true,
-        configured: false,
+    const defaultRate = Number(process.env.USD_TO_NGN_RATE || 1600) || 1600;
+    const flwSecret = (process.env.FLW_SECRET_KEY || '').trim();
+    const koraSecret = (process.env.KORAPAY_SECRET_KEY || '').trim();
+    const monnifyKey = (process.env.MONNIFY_API_KEY || '').trim();
+    const monnifySecret = (process.env.MONNIFY_SECRET_KEY || '').trim();
+    const monnifyWallet = (process.env.MONNIFY_WALLET_ACCOUNT || '').trim();
+    const kudaEmail = (process.env.KUDA_EMAIL || '').trim();
+    const kudaApiKey = (process.env.KUDA_API_KEY || '').trim();
+    const kudaSender = (process.env.KUDA_SENDER_ACCOUNT || '').trim();
+
+    const providers: Record<string, any> = {
+      flutterwave: { configured: Boolean(flwSecret), keyValid: false, mode: 'unconfigured', balances: [] },
+      korapay: { configured: Boolean(koraSecret), keyValid: false, mode: 'unconfigured', balances: [] },
+      monnify: {
+        configured: Boolean(monnifyKey && monnifySecret),
+        keyValid: false,
         mode: 'unconfigured',
-        message: 'PAYSTACK_SECRET_KEY is not configured in environment secrets yet.',
-      });
-      return;
+        walletAccountConfigured: Boolean(monnifyWallet),
+        balances: [],
+      },
+      kuda: {
+        configured: Boolean(kudaEmail && kudaApiKey),
+        keyValid: false,
+        mode: 'unconfigured',
+        senderAccountConfigured: Boolean(kudaSender),
+        balances: [],
+      },
+    };
+
+    // 1. Check Flutterwave v3
+    if (flwSecret) {
+      const flwMode = flwSecret.includes('_TEST') || flwSecret.toLowerCase().includes('test') ? 'test' : 'live';
+      try {
+        const balRes = await fetch('https://api.flutterwave.com/v3/balances', {
+          headers: { Authorization: `Bearer ${flwSecret}` },
+        });
+        const balData: any = await balRes.json();
+        if (balRes.ok && balData?.status === 'success') {
+          providers.flutterwave = {
+            configured: true,
+            keyValid: true,
+            mode: flwMode,
+            balances: Array.isArray(balData.data)
+              ? balData.data.map((b: any) => ({
+                  currency: String(b.currency || 'NGN'),
+                  available: Number(b.available_balance || 0),
+                  ledger: Number(b.ledger_balance || 0),
+                }))
+              : [],
+          };
+        } else {
+          providers.flutterwave = {
+            configured: true,
+            keyValid: false,
+            mode: flwMode,
+            balances: [],
+            error: balData?.message || 'Flutterwave rejected FLW_SECRET_KEY.',
+          };
+        }
+      } catch (err: any) {
+        providers.flutterwave = {
+          configured: true,
+          keyValid: false,
+          mode: flwMode,
+          balances: [],
+          error: err?.message || 'Could not reach Flutterwave API.',
+        };
+      }
     }
 
-    try {
-      const balRes = await fetch('https://api.paystack.co/balance', {
-        headers: { Authorization: `Bearer ${secret}` },
-      });
-      const balData: any = await balRes.json();
-      res.json({
-        ok: true,
-        configured: true,
-        mode: secret.startsWith('sk_live_') ? 'live' : 'test',
-        balances: balData?.status ? balData.data : [],
-      });
-    } catch (err: any) {
-      res.json({
-        ok: true,
-        configured: true,
-        mode: secret.startsWith('sk_live_') ? 'live' : 'test',
-        error: err?.message,
-      });
+    // 2. Check Korapay
+    if (koraSecret) {
+      const koraMode = koraSecret.startsWith('sk_live_') ? 'live' : 'test';
+      try {
+        const koraRes = await fetch('https://api.korapay.com/merchant/api/v1/balances', {
+          headers: { Authorization: `Bearer ${koraSecret}` },
+        });
+        const koraData: any = await koraRes.json();
+        if (koraRes.ok && koraData?.status) {
+          const dataObj = koraData.data || {};
+          const balances = Object.entries(dataObj).map(([cur, vals]: [string, any]) => ({
+            currency: cur,
+            available: Number(vals?.available_balance || 0),
+            ledger: Number(vals?.pending_balance || 0),
+          }));
+          providers.korapay = {
+            configured: true,
+            keyValid: true,
+            mode: koraMode,
+            balances,
+          };
+        } else {
+          providers.korapay = {
+            configured: true,
+            keyValid: false,
+            mode: koraMode,
+            balances: [],
+            error: koraData?.message || 'Korapay rejected KORAPAY_SECRET_KEY.',
+          };
+        }
+      } catch (err: any) {
+        providers.korapay = {
+          configured: true,
+          keyValid: false,
+          mode: koraMode,
+          balances: [],
+          error: err?.message || 'Could not reach Korapay API.',
+        };
+      }
     }
+
+    // 3. Check Monnify
+    if (monnifyKey && monnifySecret) {
+      try {
+        const authResult = await getMonnifyAccessToken();
+        if (!authResult.ok) {
+          providers.monnify = {
+            configured: true,
+            keyValid: false,
+            mode: 'unconfigured',
+            walletAccountConfigured: Boolean(monnifyWallet),
+            balances: [],
+            error: authResult.error,
+          };
+        } else {
+          let balances: Array<{ currency: string; available: number; ledger: number }> = [];
+          let walletErr: string | undefined;
+          if (monnifyWallet) {
+            const walRes = await fetch(
+              `${authResult.baseUrl}/api/v2/disbursements/wallet-balance?accountNumber=${encodeURIComponent(monnifyWallet)}`,
+              { headers: { Authorization: `Bearer ${authResult.token}` } }
+            );
+            const walData: any = await walRes.json();
+            if (walRes.ok && walData?.requestSuccessful) {
+              balances = [
+                {
+                  currency: 'NGN',
+                  available: Number(walData.responseBody?.availableBalance || 0),
+                  ledger: Number(walData.responseBody?.ledgerBalance || 0),
+                },
+              ];
+            } else {
+              walletErr = walData?.responseMessage || 'Could not fetch Monnify wallet balance.';
+            }
+          } else {
+            walletErr = 'MONNIFY_WALLET_ACCOUNT is required in Secrets to check wallet balance & disburse.';
+          }
+          providers.monnify = {
+            configured: true,
+            keyValid: true,
+            mode: authResult.mode,
+            walletAccountConfigured: Boolean(monnifyWallet),
+            balances,
+            ...(walletErr ? { error: walletErr } : {}),
+          };
+        }
+      } catch (err: any) {
+        providers.monnify = {
+          configured: true,
+          keyValid: false,
+          mode: 'unconfigured',
+          walletAccountConfigured: Boolean(monnifyWallet),
+          balances: [],
+          error: err?.message || 'Could not reach Monnify API.',
+        };
+      }
+    }
+
+    // 4. Check Kuda
+    if (kudaEmail && kudaApiKey) {
+      try {
+        const kudaAuth = await getKudaAccessToken();
+        if (kudaAuth.ok) {
+          providers.kuda = {
+            configured: true,
+            keyValid: true,
+            mode: 'live',
+            senderAccountConfigured: Boolean(kudaSender),
+            balances: [{ currency: 'NGN', available: 0, ledger: 0 }],
+          };
+        } else {
+          providers.kuda = {
+            configured: true,
+            keyValid: false,
+            mode: 'live',
+            senderAccountConfigured: Boolean(kudaSender),
+            balances: [],
+            error: kudaAuth.error,
+          };
+        }
+      } catch (err: any) {
+        providers.kuda = {
+          configured: true,
+          keyValid: false,
+          mode: 'unconfigured',
+          senderAccountConfigured: Boolean(kudaSender),
+          balances: [],
+          error: err?.message || 'Could not reach Kuda API.',
+        };
+      }
+    }
+
+    const activeProvider = providers.flutterwave.keyValid
+      ? 'flutterwave'
+      : providers.korapay.keyValid
+      ? 'korapay'
+      : providers.monnify.keyValid
+      ? 'monnify'
+      : providers.kuda.keyValid
+      ? 'kuda'
+      : providers.flutterwave.configured
+      ? 'flutterwave'
+      : providers.korapay.configured
+      ? 'korapay'
+      : providers.monnify.configured
+      ? 'monnify'
+      : providers.kuda.configured
+      ? 'kuda'
+      : null;
+
+    res.json({
+      ok: true,
+      activeProvider,
+      defaultRate,
+      providers,
+    });
   });
 
-  // Fetch Paystack supported banks (including Paystack-Titan)
-  app.get('/api/paystack/banks', async (req, res) => {
+  // Fetch Nigerian Bank List from Active Payout Provider
+  app.get('/api/payout/banks', async (req, res) => {
     const authCheck = await verifyAdminRequest(req);
     if (!authCheck.ok) {
       res.status(401).json({ ok: false, error: authCheck.error });
       return;
     }
-    const secret = (process.env.PAYSTACK_SECRET_KEY || '').trim();
-    if (!secret) {
-      res.status(400).json({ ok: false, error: 'PAYSTACK_SECRET_KEY is not configured.' });
-      return;
-    }
+
+    const requested = String(req.query.provider || '').toLowerCase();
+    const flwSecret = (process.env.FLW_SECRET_KEY || '').trim();
+    const koraSecret = (process.env.KORAPAY_SECRET_KEY || '').trim();
+    const monnifyKey = (process.env.MONNIFY_API_KEY || '').trim();
+    const monnifySecret = (process.env.MONNIFY_SECRET_KEY || '').trim();
+    const kudaEmail = (process.env.KUDA_EMAIL || '').trim();
+    const kudaApiKey = (process.env.KUDA_API_KEY || '').trim();
+    const provider =
+      requested || (flwSecret ? 'flutterwave' : koraSecret ? 'korapay' : monnifyKey && monnifySecret ? 'monnify' : kudaEmail && kudaApiKey ? 'kuda' : '');
+
     try {
-      const bankRes = await fetch('https://api.paystack.co/bank?country=nigeria&perPage=500', {
-        headers: { Authorization: `Bearer ${secret}` },
-      });
-      const bankData: any = await bankRes.json();
-      if (!bankRes.ok || !bankData?.status) {
-        res.status(400).json({ ok: false, error: bankData?.message || 'Failed to fetch banks from Paystack.' });
+      if (provider === 'flutterwave' && flwSecret) {
+        const r = await fetch('https://api.flutterwave.com/v3/banks/NG', {
+          headers: { Authorization: `Bearer ${flwSecret}` },
+        });
+        const d: any = await r.json();
+        if (!r.ok || d?.status !== 'success') {
+          res.status(400).json({ ok: false, error: d?.message || 'Failed to fetch Flutterwave banks.' });
+          return;
+        }
+        res.json({ ok: true, provider: 'flutterwave', banks: d.data || [] });
         return;
       }
-      res.json({ ok: true, banks: bankData.data || [] });
+
+      if (provider === 'korapay' && koraSecret) {
+        const r = await fetch('https://api.korapay.com/merchant/api/v1/misc/banks?countryCode=NG', {
+          headers: { Authorization: `Bearer ${koraSecret}` },
+        });
+        const d: any = await r.json();
+        if (!r.ok || !d?.status) {
+          res.status(400).json({ ok: false, error: d?.message || 'Failed to fetch Korapay banks.' });
+          return;
+        }
+        res.json({ ok: true, provider: 'korapay', banks: d.data || [] });
+        return;
+      }
+
+      if (provider === 'monnify') {
+        const authResult = await getMonnifyAccessToken();
+        if (!authResult.ok) {
+          res.status(400).json({ ok: false, error: authResult.error });
+          return;
+        }
+        const r = await fetch(`${authResult.baseUrl}/api/v1/banks`, {
+          headers: { Authorization: `Bearer ${authResult.token}` },
+        });
+        const d: any = await r.json();
+        if (!r.ok || !d?.requestSuccessful) {
+          res.status(400).json({ ok: false, error: d?.responseMessage || 'Failed to fetch Monnify banks.' });
+          return;
+        }
+        res.json({ ok: true, provider: 'monnify', banks: d.responseBody || [] });
+        return;
+      }
+
+      if (provider === 'kuda') {
+        const authRes = await getKudaAccessToken();
+        if (!authRes.ok) {
+          res.status(400).json({ ok: false, error: authRes.error });
+          return;
+        }
+        const r = await fetch('https://kuda-openapi.kudabank.com/v2.1', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${authRes.token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            serviceType: 'BANK_LIST',
+            requestRef: `PG-KUD-BANKS-${Date.now()}`,
+          }),
+        });
+        const d: any = await r.json();
+        const banks = d?.data || d?.responseObject || [];
+        if (!r.ok || (!Array.isArray(banks) && !d?.status)) {
+          res.status(400).json({ ok: false, error: d?.message || 'Failed to fetch Kuda bank list.' });
+          return;
+        }
+        res.json({ ok: true, provider: 'kuda', banks });
+        return;
+      }
+
+      res.status(400).json({
+        ok: false,
+        error: 'No payout provider API key is configured in AI Studio Secrets yet.',
+      });
     } catch (err: any) {
-      res.status(500).json({ ok: false, error: err?.message || 'Paystack bank lookup failed.' });
+      res.status(500).json({ ok: false, error: err?.message || 'Failed to load bank list.' });
     }
   });
 
-  // Resolve real bank account name via Paystack
-  app.get('/api/paystack/resolve-account', async (req, res) => {
+  // Verify Destination Bank Account Name (e.g. SmartCash 120004 / 8081756524)
+  app.get('/api/payout/resolve-account', async (req, res) => {
     const authCheck = await verifyAdminRequest(req);
     if (!authCheck.ok) {
       res.status(401).json({ ok: false, error: authCheck.error });
       return;
     }
-    const secret = (process.env.PAYSTACK_SECRET_KEY || '').trim();
-    if (!secret) {
-      res.status(400).json({ ok: false, error: 'PAYSTACK_SECRET_KEY is not configured.' });
-      return;
-    }
+
     const accountNumber = String(req.query.account_number || '').trim();
     const bankCode = String(req.query.bank_code || '').trim();
+    const requested = String(req.query.provider || '').toLowerCase();
+    const flwSecret = (process.env.FLW_SECRET_KEY || '').trim();
+    const koraSecret = (process.env.KORAPAY_SECRET_KEY || '').trim();
+    const monnifyKey = (process.env.MONNIFY_API_KEY || '').trim();
+    const monnifySecret = (process.env.MONNIFY_SECRET_KEY || '').trim();
+    const kudaEmail = (process.env.KUDA_EMAIL || '').trim();
+    const kudaApiKey = (process.env.KUDA_API_KEY || '').trim();
+    const provider =
+      requested || (flwSecret ? 'flutterwave' : koraSecret ? 'korapay' : monnifyKey && monnifySecret ? 'monnify' : kudaEmail && kudaApiKey ? 'kuda' : '');
+
     if (!accountNumber || !bankCode) {
       res.status(400).json({ ok: false, error: 'Account number and bank code are required.' });
       return;
     }
+
     try {
-      const r = await fetch(
-        `https://api.paystack.co/bank/resolve?account_number=${encodeURIComponent(accountNumber)}&bank_code=${encodeURIComponent(bankCode)}`,
-        { headers: { Authorization: `Bearer ${secret}` } }
-      );
-      const data: any = await r.json();
-      if (!r.ok || !data?.status) {
-        res.status(400).json({ ok: false, error: data?.message || 'Unable to verify bank account.' });
+      if (provider === 'flutterwave') {
+        if (!flwSecret) {
+          res.status(400).json({ ok: false, error: 'FLW_SECRET_KEY is not configured.' });
+          return;
+        }
+        const r = await fetch('https://api.flutterwave.com/v3/accounts/resolve', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${flwSecret}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            account_number: accountNumber,
+            account_bank: bankCode,
+          }),
+        });
+        const d: any = await r.json();
+        if (!r.ok || d?.status !== 'success' || !d?.data?.account_name) {
+          res.status(400).json({ ok: false, error: d?.message || 'Flutterwave could not verify this bank account.' });
+          return;
+        }
+        res.json({
+          ok: true,
+          provider: 'flutterwave',
+          account_name: d.data.account_name,
+          account_number: d.data.account_number || accountNumber,
+        });
         return;
       }
-      res.json({ ok: true, account_name: data.data?.account_name, account_number: data.data?.account_number });
+
+      if (provider === 'korapay') {
+        if (!koraSecret) {
+          res.status(400).json({ ok: false, error: 'KORAPAY_SECRET_KEY is not configured.' });
+          return;
+        }
+        const r = await fetch('https://api.korapay.com/merchant/api/v1/misc/banks/resolve', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${koraSecret}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            bank: bankCode,
+            account: accountNumber,
+          }),
+        });
+        const d: any = await r.json();
+        if (!r.ok || !d?.status || !d?.data?.account_name) {
+          res.status(400).json({ ok: false, error: d?.message || 'Korapay could not verify this bank account.' });
+          return;
+        }
+        res.json({
+          ok: true,
+          provider: 'korapay',
+          account_name: d.data.account_name,
+          account_number: d.data.account_number || accountNumber,
+        });
+        return;
+      }
+
+      if (provider === 'monnify') {
+        const authResult = await getMonnifyAccessToken();
+        if (!authResult.ok) {
+          res.status(400).json({ ok: false, error: authResult.error });
+          return;
+        }
+        const r = await fetch(
+          `${authResult.baseUrl}/api/v1/disbursements/account/validate?accountNumber=${encodeURIComponent(accountNumber)}&bankCode=${encodeURIComponent(bankCode)}`,
+          { headers: { Authorization: `Bearer ${authResult.token}` } }
+        );
+        const d: any = await r.json();
+        if (!r.ok || !d?.requestSuccessful || !d?.responseBody?.accountName) {
+          res.status(400).json({ ok: false, error: d?.responseMessage || 'Monnify could not verify this bank account.' });
+          return;
+        }
+        res.json({
+          ok: true,
+          provider: 'monnify',
+          account_name: d.responseBody.accountName,
+          account_number: d.responseBody.accountNumber || accountNumber,
+        });
+        return;
+      }
+
+      if (provider === 'kuda') {
+        const authRes = await getKudaAccessToken();
+        if (!authRes.ok) {
+          res.status(400).json({ ok: false, error: authRes.error });
+          return;
+        }
+        const r = await fetch('https://kuda-openapi.kudabank.com/v2.1', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${authRes.token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            serviceType: 'NAME_ENQUIRY',
+            requestRef: `PG-KUD-NAME-${Date.now()}`,
+            data: {
+              bankCode: bankCode,
+              accountNumber: accountNumber,
+            },
+          }),
+        });
+        const d: any = await r.json();
+        const nameObj = d?.data || d?.responseObject;
+        const accountName = nameObj?.beneficiaryName || nameObj?.accountName;
+        if (!r.ok || !accountName) {
+          res.status(400).json({ ok: false, error: d?.message || 'Kuda could not verify this bank account.' });
+          return;
+        }
+        res.json({
+          ok: true,
+          provider: 'kuda',
+          account_name: accountName,
+          account_number: nameObj?.beneficiaryAccount || accountNumber,
+        });
+        return;
+      }
+
+      res.status(400).json({ ok: false, error: 'Unsupported payout provider.' });
     } catch (err: any) {
       res.status(500).json({ ok: false, error: err?.message || 'Account verification error.' });
     }
   });
 
-  // Execute Real Paystack Bank Transfer (Paystack-Titan or any bank)
-  app.post('/api/paystack/transfer', async (req, res) => {
+  // Execute Real Direct Bank Transfer (Flutterwave, Korapay, or Monnify -> SmartCash PSB 120004 / 8081756524)
+  app.post('/api/payout/transfer', async (req, res) => {
     const authCheck = await verifyAdminRequest(req);
     if (!authCheck.ok) {
       res.status(401).json({ ok: false, error: authCheck.error });
       return;
     }
 
-    const secret = (process.env.PAYSTACK_SECRET_KEY || '').trim();
-    if (!secret) {
+    const {
+      provider: reqProvider,
+      bankCode,
+      bankName,
+      accountNumber,
+      accountName,
+      amount,
+      ngnAmount,
+      exchangeRate,
+      debitCurrency,
+      reason,
+    } = req.body || {};
+
+    const numAmount = Number(amount);
+    if (!bankCode || !accountNumber || isNaN(numAmount) || numAmount <= 0) {
       res.status(400).json({
         ok: false,
-        code: 'PAYSTACK_KEY_MISSING',
-        error:
-          'Real bank transfers require PAYSTACK_SECRET_KEY in environment secrets. Add your Paystack Secret Key (sk_live_... or sk_test_...) in AI Studio Secrets to send real payouts to Paystack-Titan or any bank.',
+        error: 'Destination bank code, account number, and valid USD amount are required.',
       });
       return;
     }
 
-    const { bankCode, bankName, accountNumber, accountName, amount, currency, reason } = req.body || {};
-    const numAmount = Number(amount);
-    if (!accountNumber || !accountName || !bankCode || isNaN(numAmount) || numAmount <= 0) {
+    const flwSecret = (process.env.FLW_SECRET_KEY || '').trim();
+    const koraSecret = (process.env.KORAPAY_SECRET_KEY || '').trim();
+    const monnifyKey = (process.env.MONNIFY_API_KEY || '').trim();
+    const monnifySecret = (process.env.MONNIFY_SECRET_KEY || '').trim();
+    const monnifyWallet = (process.env.MONNIFY_WALLET_ACCOUNT || '').trim();
+    const kudaEmail = (process.env.KUDA_EMAIL || '').trim();
+    const kudaApiKey = (process.env.KUDA_API_KEY || '').trim();
+
+    const chosenProvider = String(reqProvider || '').toLowerCase() ||
+      (flwSecret ? 'flutterwave' : koraSecret ? 'korapay' : monnifyKey && monnifySecret ? 'monnify' : kudaEmail && kudaApiKey ? 'kuda' : '');
+
+    if (!chosenProvider) {
       res.status(400).json({
         ok: false,
-        error: 'Bank selection, bank code, account number, account name, and valid amount are required.',
+        code: 'PAYOUT_KEY_MISSING',
+        error:
+          'No live payout gateway key configured yet. Add FLW_SECRET_KEY (Flutterwave), KORAPAY_SECRET_KEY (Korapay), MONNIFY_* keys, or KUDA_* keys in AI Studio Secrets with a funded merchant balance.',
       });
       return;
     }
+
+    const effectiveRate =
+      Number(exchangeRate) > 0
+        ? Number(exchangeRate)
+        : Number(process.env.USD_TO_NGN_RATE || 1600) || 1600;
+    const majorNgnAmount =
+      Number(ngnAmount) > 0 ? Math.round(Number(ngnAmount)) : Math.round(numAmount * effectiveRate);
+
+    if (majorNgnAmount < 100) {
+      res.status(400).json({
+        ok: false,
+        error: 'Minimum Nigerian Naira bank transfer is ₦100.',
+      });
+      return;
+    }
+
+    const cleanAcctNum = String(accountNumber).trim();
+    const cleanBankCode = String(bankCode).trim();
+    const cleanName = String(accountName || 'SMARTCASH ACCOUNT HOLDER').trim();
+    const narration = reason || `PayGo Settlement to ${bankName || cleanBankCode} (${cleanAcctNum})`;
 
     try {
-      const txCurrency = (currency || process.env.PAYSTACK_CURRENCY || 'NGN').toUpperCase();
-      // Step 1: Create Transfer Recipient on Paystack
-      const recipRes = await fetch('https://api.paystack.co/transferrecipient', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${secret}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          type: 'nuban',
-          name: String(accountName).trim(),
-          account_number: String(accountNumber).trim(),
-          bank_code: String(bankCode).trim(),
-          currency: txCurrency,
-        }),
-      });
-      const recipData: any = await recipRes.json();
-      if (!recipRes.ok || !recipData?.status || !recipData?.data?.recipient_code) {
-        res.status(400).json({
-          ok: false,
-          error: recipData?.message || `Failed to create Paystack recipient for ${bankName || bankCode}.`,
+      if (chosenProvider === 'flutterwave') {
+        if (!flwSecret) {
+          res.status(400).json({ ok: false, error: 'FLW_SECRET_KEY is not configured in Secrets.' });
+          return;
+        }
+        const reference = `PG-FLW-${Date.now()}`;
+        const chosenDebit = String(debitCurrency || 'NGN').toUpperCase() === 'USD' ? 'USD' : 'NGN';
+        const transferRes = await fetch('https://api.flutterwave.com/v3/transfers', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${flwSecret}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            account_bank: cleanBankCode,
+            account_number: cleanAcctNum,
+            amount: chosenDebit === 'USD' ? numAmount : majorNgnAmount,
+            currency: 'NGN',
+            debit_currency: chosenDebit,
+            narration,
+            reference,
+          }),
+        });
+        const transferData: any = await transferRes.json();
+        if (!transferRes.ok || transferData?.status !== 'success') {
+          res.status(400).json({
+            ok: false,
+            error:
+              transferData?.message ||
+              'Flutterwave transfer failed. Ensure your Flutterwave NGN/USD balance is funded and Transfers are enabled.',
+          });
+          return;
+        }
+        res.json({
+          ok: true,
+          provider: 'flutterwave',
+          transferCode: String(transferData.data?.id || ''),
+          reference: transferData.data?.reference || reference,
+          status: transferData.data?.status || 'NEW',
+          ngnAmount: majorNgnAmount,
+          debitCurrency: chosenDebit,
+          message: transferData.message || 'Transfer queued via Flutterwave.',
         });
         return;
       }
 
-      // Step 2: Initiate Real Transfer (amount in kobo/cents: * 100)
-      const reference = `PG-LIVE-${Date.now()}`;
-      const transferRes = await fetch('https://api.paystack.co/transfer', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${secret}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          source: 'balance',
-          amount: Math.round(numAmount * 100),
-          recipient: recipData.data.recipient_code,
-          reason: reason || `PayGo Admin Payout to ${bankName || bankCode}`,
+      if (chosenProvider === 'korapay') {
+        if (!koraSecret) {
+          res.status(400).json({ ok: false, error: 'KORAPAY_SECRET_KEY is not configured in Secrets.' });
+          return;
+        }
+        const reference = `PG-KORA-${Date.now()}`;
+        const transferRes = await fetch('https://api.korapay.com/merchant/api/v1/transactions/disburse', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${koraSecret}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            reference,
+            destination: {
+              type: 'bank_account',
+              amount: majorNgnAmount,
+              currency: 'NGN',
+              narration,
+              bank_account: {
+                bank: cleanBankCode,
+                account: cleanAcctNum,
+              },
+              customer: {
+                name: cleanName,
+                email: authCheck.email || 'ibro88977@gmail.com',
+              },
+            },
+          }),
+        });
+        const transferData: any = await transferRes.json();
+        if (!transferRes.ok || !transferData?.status) {
+          res.status(400).json({
+            ok: false,
+            error:
+              transferData?.message ||
+              'Korapay disbursement failed. Ensure your Korapay NGN wallet has sufficient funded balance.',
+          });
+          return;
+        }
+        res.json({
+          ok: true,
+          provider: 'korapay',
+          transferCode: transferData.data?.reference || '',
+          reference: transferData.data?.reference || reference,
+          status: transferData.data?.status || 'processing',
+          ngnAmount: majorNgnAmount,
+          message: transferData.message || 'Disbursement initiated via Korapay.',
+        });
+        return;
+      }
+
+      if (chosenProvider === 'monnify') {
+        if (!monnifyWallet) {
+          res.status(400).json({
+            ok: false,
+            error: 'MONNIFY_WALLET_ACCOUNT is not configured in Secrets. Set your Monnify source wallet account number.',
+          });
+          return;
+        }
+        if (!cleanName || cleanName === 'SMARTCASH ACCOUNT HOLDER') {
+          res.status(400).json({
+            ok: false,
+            error: 'Monnify requires the verified recipient Account Holder Name. Tap Verify Name first.',
+          });
+          return;
+        }
+        const authResult = await getMonnifyAccessToken();
+        if (!authResult.ok) {
+          res.status(400).json({ ok: false, error: authResult.error });
+          return;
+        }
+        const reference = `PG-MON-${Date.now()}`;
+        const transferRes = await fetch(`${authResult.baseUrl}/api/v2/disbursements/single`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${authResult.token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            amount: majorNgnAmount,
+            reference,
+            narration,
+            destinationBankCode: cleanBankCode,
+            destinationAccountNumber: cleanAcctNum,
+            destinationAccountName: cleanName,
+            currency: 'NGN',
+            sourceAccountNumber: monnifyWallet,
+          }),
+        });
+        const transferData: any = await transferRes.json();
+        if (!transferRes.ok || !transferData?.requestSuccessful) {
+          res.status(400).json({
+            ok: false,
+            error:
+              transferData?.responseMessage ||
+              'Monnify disbursement failed (note: live Monnify requires IP whitelisting & funded wallet balance).',
+          });
+          return;
+        }
+        res.json({
+          ok: true,
+          provider: 'monnify',
+          transferCode: transferData.responseBody?.transactionReference || '',
+          reference: transferData.responseBody?.reference || reference,
+          status: transferData.responseBody?.status || 'SUCCESS',
+          ngnAmount: majorNgnAmount,
+          message: transferData.responseMessage || 'Disbursement submitted via Monnify.',
+        });
+        return;
+      }
+
+      if (chosenProvider === 'kuda') {
+        const kudaEmail = (process.env.KUDA_EMAIL || '').trim();
+        const kudaApiKey = (process.env.KUDA_API_KEY || '').trim();
+        const kudaSender = (process.env.KUDA_SENDER_ACCOUNT || '').trim();
+        if (!kudaEmail || !kudaApiKey) {
+          res.status(400).json({ ok: false, error: 'KUDA_EMAIL and KUDA_API_KEY are not configured in Secrets.' });
+          return;
+        }
+        if (!kudaSender) {
+          res.status(400).json({
+            ok: false,
+            error: 'KUDA_SENDER_ACCOUNT is required in Secrets (your Kuda business account number acting as sender).',
+          });
+          return;
+        }
+        const authRes = await getKudaAccessToken();
+        if (!authRes.ok) {
+          res.status(400).json({ ok: false, error: authRes.error });
+          return;
+        }
+        const reference = `PG-KUD-${Date.now()}`;
+        const amountInKobo = Math.round(majorNgnAmount * 100);
+        const r = await fetch('https://kuda-openapi.kudabank.com/v2.1', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${authRes.token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            serviceType: 'SINGLE_FUND_TRANSFER',
+            requestRef: reference,
+            data: {
+              beneficiaryAccount: cleanAcctNum,
+              beneficiaryBankCode: cleanBankCode,
+              beneficiaryName: cleanName,
+              clientAccountNumber: kudaSender,
+              amount: amountInKobo,
+              narration,
+              requestRef: reference,
+            },
+          }),
+        });
+        const d: any = await r.json();
+        if (!r.ok || (d?.status === false && d?.status !== 'success')) {
+          res.status(400).json({
+            ok: false,
+            error: d?.message || 'Kuda transfer failed. Ensure your Kuda business account has sufficient balance.',
+          });
+          return;
+        }
+        res.json({
+          ok: true,
+          provider: 'kuda',
+          transferCode: reference,
           reference,
-        }),
-      });
-      const transferData: any = await transferRes.json();
-      if (!transferRes.ok || !transferData?.status) {
-        res.status(400).json({
-          ok: false,
-          error: transferData?.message || 'Paystack transfer could not be completed.',
+          status: 'SUCCESS',
+          ngnAmount: majorNgnAmount,
+          message: d?.message || 'Transfer submitted via Kuda.',
         });
         return;
       }
 
-      res.json({
-        ok: true,
-        transferCode: transferData.data?.transfer_code,
-        reference: transferData.data?.reference || reference,
-        status: transferData.data?.status || 'success',
-        currency: txCurrency,
-      });
+      res.status(400).json({ ok: false, error: `Unsupported payout provider: ${chosenProvider}` });
     } catch (err: any) {
-      res.status(500).json({ ok: false, error: err?.message || 'Paystack transfer request failed.' });
+      res.status(500).json({ ok: false, error: err?.message || 'Bank payout request failed.' });
     }
   });
 

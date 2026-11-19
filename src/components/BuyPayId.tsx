@@ -544,6 +544,16 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
               </p>
             </div>
 
+            <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl p-4 space-y-1.5">
+              <div className="flex items-center space-x-2">
+                <Gift className="w-5 h-5 text-purple-700" />
+                <h3 className="font-bold text-sm text-purple-900">Real & Unused Gift Cards Only</h3>
+              </div>
+              <p className="text-xs text-purple-800 leading-relaxed">
+                Drop a genuine, unredeemed <strong>$25</strong> gift card with its clear photo / receipt to verify your wallet and unlock PAY ID. <strong>Used, redeemed, or fake gift cards are strictly not allowed.</strong>
+              </p>
+            </div>
+
             {/* Payment Method Selector Tabs */}
             <div className="grid grid-cols-2 gap-2 bg-gray-200 p-1.5 rounded-2xl">
               <button
@@ -575,16 +585,6 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
 
             {paymentMethod === 'giftcard' ? (
               <form onSubmit={handleGiftCardPayment} className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 space-y-4">
-                <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl p-4 space-y-1.5">
-                  <div className="flex items-center space-x-2">
-                    <Gift className="w-5 h-5 text-purple-700" />
-                    <h3 className="font-bold text-sm text-purple-900">Real & Unused Gift Cards Only</h3>
-                  </div>
-                  <p className="text-xs text-purple-800 leading-relaxed">
-                    Drop a genuine, unredeemed <strong>$25</strong> gift card with its clear photo / receipt to verify your wallet and unlock PAY ID. <strong>Used, redeemed, or fake gift cards are strictly not allowed.</strong>
-                  </p>
-                </div>
-
                 {giftCardError && (
                   <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-start space-x-2 font-medium">
                     <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
@@ -612,25 +612,9 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
                   </select>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-xl">
-                  <button
-                    type="button"
-                    onClick={() => setGiftCardFormat('ecode')}
-                    className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                      giftCardFormat === 'ecode' ? 'bg-white text-purple-900 shadow-xs' : 'text-gray-500'
-                    }`}
-                  >
-                    Digital E-Code
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setGiftCardFormat('physical')}
-                    className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                      giftCardFormat === 'physical' ? 'bg-white text-purple-900 shadow-xs' : 'text-gray-500'
-                    }`}
-                  >
-                    Physical Card (Photo)
-                  </button>
+                <div className="bg-purple-50 border border-purple-100 rounded-xl py-2 px-3 text-center text-xs font-bold text-purple-900 flex items-center justify-center space-x-1.5">
+                  <Gift className="w-3.5 h-3.5 text-purple-700" />
+                  <span>Unused Gift Card Code &amp; Photo Submission</span>
                 </div>
 
                 <div>
@@ -656,36 +640,16 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
                   </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">
-                      Card PIN / CVV{' '}
-                      {GIFT_CARD_BRANDS.find((b) => b.name === giftCardBrand)?.requiresPin
-                        ? '(Required *)'
-                        : '(If shown)'}
-                    </label>
-                    <input
-                      type="text"
-                      value={giftCardPin}
-                      onChange={(e) => setGiftCardPin(e.target.value)}
-                      placeholder="e.g. 1234"
-                      required={Boolean(
-                        GIFT_CARD_BRANDS.find((b) => b.name === giftCardBrand)?.requiresPin
-                      )}
-                      className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-600 outline-none text-sm font-mono text-gray-900"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">
-                      Required Value ($)
-                    </label>
-                    <input
-                      type="text"
-                      readOnly
-                      value="$25"
-                      className="w-full p-3 bg-gray-100 border border-gray-200 rounded-xl text-sm font-bold text-purple-900 font-mono"
-                    />
-                  </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">
+                    Required Value ($)
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    value="$25"
+                    className="w-full p-3 bg-gray-100 border border-gray-200 rounded-xl text-sm font-bold text-purple-900 font-mono"
+                  />
                 </div>
 
                 <div>

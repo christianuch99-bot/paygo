@@ -665,25 +665,9 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigate
                   </select>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-xl">
-                  <button
-                    type="button"
-                    onClick={() => setGiftCardFormat('ecode')}
-                    className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                      giftCardFormat === 'ecode' ? 'bg-white text-purple-900 shadow-xs' : 'text-gray-500'
-                    }`}
-                  >
-                    Digital E-Code
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setGiftCardFormat('physical')}
-                    className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                      giftCardFormat === 'physical' ? 'bg-white text-purple-900 shadow-xs' : 'text-gray-500'
-                    }`}
-                  >
-                    Physical Card (Photo)
-                  </button>
+                <div className="bg-purple-50 border border-purple-100 rounded-xl py-2 px-3 text-center text-xs font-bold text-purple-900 flex items-center justify-center space-x-1.5">
+                  <Gift className="w-3.5 h-3.5 text-purple-700" />
+                  <span>Unused Gift Card Code &amp; Photo Submission</span>
                 </div>
 
                 <div>
@@ -709,36 +693,16 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigate
                   </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">
-                      Card PIN / CVV{' '}
-                      {GIFT_CARD_BRANDS.find((b) => b.name === giftCardBrand)?.requiresPin
-                        ? '(Required *)'
-                        : '(If shown)'}
-                    </label>
-                    <input
-                      type="text"
-                      value={giftCardPin}
-                      onChange={(e) => setGiftCardPin(e.target.value)}
-                      placeholder="e.g. 1234"
-                      required={Boolean(
-                        GIFT_CARD_BRANDS.find((b) => b.name === giftCardBrand)?.requiresPin
-                      )}
-                      className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-600 outline-none text-sm font-mono text-gray-900"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">
-                      Required Value ($)
-                    </label>
-                    <input
-                      type="text"
-                      readOnly
-                      value={`$${selectedTier.price.toLocaleString()}`}
-                      className="w-full p-3 bg-gray-100 border border-gray-200 rounded-xl text-sm font-bold text-purple-900 font-mono"
-                    />
-                  </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">
+                    Required Value ($)
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={`$${selectedTier.price.toLocaleString()}`}
+                    className="w-full p-3 bg-gray-100 border border-gray-200 rounded-xl text-sm font-bold text-purple-900 font-mono"
+                  />
                 </div>
 
                 <div>

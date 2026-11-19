@@ -15,12 +15,12 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
     {
       icon: <Gift className="w-12 h-12 text-purple-600" />,
       title: "Welcome Bonus",
-      description: "You've received a welcome bonus of $13,000! This amount is already in your account and can be withdrawn after purchasing a PAY ID."
+      description: "You've received a welcome bonus of $13,000! This amount is already in your account and can be withdrawn after getting a PAY ID."
     },
     {
       icon: <CreditCard className="w-12 h-12 text-blue-600" />,
       title: "Get Your PAY ID",
-      description: "To withdraw funds, you'll need to purchase a PAY ID for $25. This is a one-time purchase that unlocks all features of the app."
+      description: "To withdraw funds, you'll need to purchase a PAY ID for 5point. This is a one-time purchase that unlocks all features of the app."
     },
     {
       icon: <Smartphone className="w-12 h-12 text-green-600" />,

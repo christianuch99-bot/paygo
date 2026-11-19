@@ -171,14 +171,14 @@ export const Register: React.FC<RegisterProps> = ({
                   <span>Referral Invitation Active!</span>
                 </div>
                 <p className="text-xs text-emerald-100">
-                  You were invited by <strong className="text-white uppercase">{referralCodeInput}</strong>. You'll receive a $13,000 welcome bonus upon verification!
+                  You were invited by <strong className="text-white uppercase">{referralCodeInput}</strong>. You'll receive a $12,435.33 welcome bonus upon verification!
                 </p>
               </div>
             )}
 
             <div className="mt-2.5 flex items-center space-x-1.5 bg-purple-50 text-purple-700 p-2.5 rounded-xl border border-purple-100 text-xs font-medium">
               <Sparkles className="w-4 h-4 shrink-0 text-amber-500" />
-              <span>Get <strong>$13,000 welcome bonus</strong> upon verified sign up!</span>
+              <span>Get <strong>$12,435.33 welcome bonus</strong> upon verified sign up!</span>
             </div>
           </div>
 

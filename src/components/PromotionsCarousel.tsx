@@ -27,10 +27,10 @@ const PROMOS: PromoItem[] = [
     fallbackGradient: 'from-purple-950 via-indigo-900 to-slate-900',
   },
   {
-    title: '$13,000 Bonus & $25 Invites',
+    title: '$12,435.33 Bonus & $25 Invites',
     subtitle: 'Active Referral Rewards',
     description:
-      'Start with a $13,000 welcome balance and earn $25 instantly every time a friend joins using your invite link.',
+      'Start with a $12,435.33 welcome balance and earn $25 instantly every time a friend joins using your invite link.',
     ctaLabel: 'Invite & Earn $25',
     targetView: 'earn-more',
     image: promoWelcomeBonusImg,

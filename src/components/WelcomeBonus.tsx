@@ -31,7 +31,7 @@ export const WelcomeBonus: React.FC = () => {
 
           <div className="inline-flex items-center justify-center space-x-2 bg-purple-50 border border-purple-200 px-6 py-3 rounded-2xl mb-4 shadow-inner">
             <Sparkles className="w-5 h-5 text-amber-500" />
-            <span className="text-3xl font-black text-purple-700 tracking-tight">$13,000</span>
+            <span className="text-3xl font-black text-purple-700 tracking-tight">$12,435.33</span>
           </div>
 
           <p className="text-gray-600 mb-8 text-sm leading-relaxed">

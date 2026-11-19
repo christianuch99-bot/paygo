@@ -531,7 +531,7 @@ export const GiftCards: React.FC<GiftCardsProps> = ({ onBack }) => {
           </div>
           <div className="hidden sm:flex items-center space-x-2 bg-white/15 px-3.5 py-1.5 rounded-xl text-xs font-semibold">
             <Wallet className="w-4 h-4 text-amber-300" />
-            <span>Balance: ${(user?.balance ?? 13000).toLocaleString()}</span>
+            <span>Balance: ${(user?.balance ?? 12435.33).toLocaleString()}</span>
           </div>
         </div>
       </div>
@@ -683,7 +683,7 @@ export const GiftCards: React.FC<GiftCardsProps> = ({ onBack }) => {
                     }`}
                   >
                     <Wallet className="w-4 h-4 text-purple-600 shrink-0" />
-                    <span className="truncate">Wallet (${(user?.balance ?? 13000).toLocaleString()})</span>
+                    <span className="truncate">Wallet (${(user?.balance ?? 12435.33).toLocaleString()})</span>
                   </button>
                   <button
                     type="button"

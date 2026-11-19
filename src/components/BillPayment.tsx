@@ -243,7 +243,7 @@ Processed by PayGo Bill Pay
               Wallet Balance
             </p>
             <h2 className="text-2xl sm:text-3xl font-black mt-1">
-              ${(user?.balance ?? 13000).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              ${(user?.balance ?? 12435.33).toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </h2>
           </div>
           <div className="w-11 h-11 rounded-2xl bg-white/15 flex items-center justify-center">

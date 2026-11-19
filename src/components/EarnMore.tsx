@@ -27,7 +27,7 @@ export const EarnMore: React.FC<EarnMoreProps> = ({
         : 'paygo_vip');
     const referralLink = `${baseUrl}/?ref=${refCode}`;
     const text = encodeURIComponent(
-      `Join PayGo and start earning! Get $13,000 welcome bonus when you sign up using my link: ${referralLink}`
+      `Join PayGo and start earning! Get $12,435.33 welcome bonus when you sign up using my link: ${referralLink}`
     );
     window.open(`https://wa.me/?text=${text}`, '_blank');
   };
@@ -63,7 +63,7 @@ export const EarnMore: React.FC<EarnMoreProps> = ({
           </div>
 
           <p className="text-purple-100 text-xs sm:text-sm leading-relaxed mb-6">
-            Invite friends to PayGo and earn $25 for each friend who signs up using your referral link and purchases a PAY ID.
+            Invite friends to PayGo and earn $25 for each friend who signs up using your referral link and getting a PAY ID.
           </p>
 
           <div className="grid grid-cols-2 gap-3">

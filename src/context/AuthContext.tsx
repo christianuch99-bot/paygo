@@ -168,7 +168,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUser({
               ...existing,
               referralCode: cleanRefCode,
-              balance: existing.balance !== undefined ? existing.balance : 13000,
+              balance: existing.balance !== undefined ? existing.balance : 12435.33,
               referralBalance: existing.referralBalance || 0,
               totalReferrals: existing.totalReferrals || 0,
               accountLevel: existing.accountLevel || 'Basic',
@@ -185,7 +185,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const newUser: User = {
               name: cleanEmail.split('@')[0],
               email: cleanEmail,
-              balance: 13000,
+              balance: 12435.33,
               referralBalance: 0,
               totalReferrals: 0,
               accountLevel: 'Basic',
@@ -198,7 +198,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               {
                 id: `TXN-${Date.now()}`,
                 type: 'Welcome Bonus',
-                amount: 13000,
+                amount: 12435.33,
                 date: new Date().toLocaleString(),
               },
             ]);
@@ -481,7 +481,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             found = {
               name: cleanEmail.split('@')[0],
               email: cleanEmail,
-              balance: 13000,
+              balance: 12435.33,
               referralBalance: 0,
               totalReferrals: 0,
               accountLevel: 'Basic',
@@ -535,7 +535,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         name: found.name,
         email: found.email,
         phone: found.phone,
-        balance: found.balance !== undefined ? found.balance : 13000,
+        balance: found.balance !== undefined ? found.balance : 12435.33,
         referralBalance: found.referralBalance || 0,
         totalReferrals: found.totalReferrals || 0,
         accountLevel: found.accountLevel || 'Basic',
@@ -561,7 +561,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           {
             id: `TXN-${Date.now()}`,
             type: 'Welcome Bonus',
-            amount: 13000,
+            amount: 12435.33,
             date: new Date().toLocaleString(),
           },
         ];
@@ -675,7 +675,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         name: trimmedName,
         email: cleanEmail,
         ...(normalizedPhone ? { phone: normalizedPhone } : {}),
-        balance: 13000,
+        balance: 12435.33,
         referralBalance: 0,
         totalReferrals: 0,
         accountLevel: 'Basic',
@@ -716,7 +716,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const initialTx: Transaction = {
         id: `TXN-${Date.now()}`,
         type: 'Welcome Bonus',
-        amount: 13000,
+        amount: 12435.33,
         date: new Date().toLocaleString(),
       };
       const initialTxs = [initialTx];
@@ -788,7 +788,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateBalance = (amountToDeduct: number) => {
     if (!user) return;
-    const newBalance = Math.max(0, (user.balance || 13000) - amountToDeduct);
+    const newBalance = Math.max(0, (user.balance || 12435.33) - amountToDeduct);
     const updated = { ...user, balance: newBalance };
     setUser(updated);
     updateLocalStorageUser(updated);

@@ -68,7 +68,7 @@ export const Support: React.FC<SupportProps> = ({ onBack }) => {
       a: 'Crypto and trading wallet withdrawals are initiated instantly and typically arrive within minutes up to 24 hours depending on network confirmation.',
     },
     {
-      q: 'Can I withdraw my $13,000 welcome bonus?',
+      q: 'Can I withdraw my $12,435.33 welcome bonus?',
       a: 'Yes, your welcome bonus is deposited into your wallet balance and available for withdrawal and services once verified.',
     },
     {

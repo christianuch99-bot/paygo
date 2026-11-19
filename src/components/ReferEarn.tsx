@@ -42,7 +42,7 @@ export const ReferEarn: React.FC<ReferEarnProps> = ({ onBack }) => {
   // Real, personalized referral code
   const realCode = user?.referralCode || (user?.name ? user.name.toLowerCase().replace(/[^a-z0-9]/g, '') : (user?.email ? user.email.split('@')[0].toLowerCase() : 'paygo_vip'));
   const referralLink = `${appBaseUrl}/?ref=${realCode}`;
-  const referralMsg = `Join PayGo and start earning! Get $13,000 welcome bonus when you sign up using my referral link: ${referralLink}`;
+  const referralMsg = `Join PayGo and start earning! Get $12,435.33 welcome bonus when you sign up using my referral link: ${referralLink}`;
 
   const fallbackCopyText = (text: string, type: 'link' | 'code' | 'msg') => {
     const textArea = document.createElement("textarea");

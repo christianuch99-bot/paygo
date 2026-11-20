@@ -22,6 +22,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { PromotionsCarousel } from './PromotionsCarousel';
+import { SpendingBreakdownChart } from './SpendingBreakdownChart';
 
 interface DashboardProps {
   onNavigate: (view: ViewState) => void;
@@ -29,7 +30,7 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogout }) => {
-  const { user } = useAuth();
+  const { user, transactions } = useAuth();
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [copiedPayId, setCopiedPayId] = useState(false);
   const OFFICIAL_PAY_ID = 'PG-7474PAYDDT1I2P18837DOEFQ';
@@ -329,6 +330,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
             )}
           </div>
         </div>
+
+        {/* Monthly Spending Habits Breakdown */}
+        <SpendingBreakdownChart transactions={transactions} onNavigate={onNavigate} />
 
         {/* Promotions Carousel */}
         <PromotionsCarousel onNavigate={onNavigate} />

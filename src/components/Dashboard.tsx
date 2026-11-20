@@ -233,7 +233,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
             <div className="flex flex-col mb-4">
               <div className="text-3xl sm:text-4xl font-black tracking-tight text-white tabular-nums">
                 {balanceVisible
-                  ? `$${(user?.balance ?? 13000).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  ? `$${(user?.balance ?? 12435.33).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                   : '$***,***.00'}
               </div>
               <p className="text-xs text-emerald-300 font-medium mt-1">

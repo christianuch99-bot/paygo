@@ -351,7 +351,7 @@ Keep this receipt for your records.
               Available Balance
             </p>
             <h2 className="text-2xl sm:text-3xl font-black mt-1">
-              ${(user?.balance ?? 13000).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+              ${(user?.balance ?? 12435.33).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
             </h2>
           </div>
           <div className="text-right">
@@ -482,15 +482,15 @@ Keep this receipt for your records.
                   type="number"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  placeholder="Min 5000 (e.g. 13000)"
+                  placeholder="Min 5000 (e.g. 12435.33)"
                   min={5000}
-                  max={user?.balance ?? 13000}
+                  max={user?.balance ?? 12435.33}
                   className="w-full pl-8 pr-16 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-600 outline-none text-sm font-bold text-gray-900"
                   required
                 />
                 <button
                   type="button"
-                  onClick={() => setAmount(String(user?.balance ?? 13000))}
+                  onClick={() => setAmount(String(user?.balance ?? 12435.33))}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 px-2 py-1 rounded-lg font-semibold cursor-pointer"
                 >
                   MAX

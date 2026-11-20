@@ -332,7 +332,6 @@ export const Register: React.FC<RegisterProps> = ({
                   type="text"
                   value={referralCodeInput}
                   onChange={(e) => setReferralCodeInput(e.target.value.toLowerCase())}
-                  placeholder="Enter referral code (e.g. ibro)"
                   className="w-full pl-10 pr-4 py-2.5 border border-purple-200 bg-purple-50/50 rounded-xl focus:ring-2 focus:ring-purple-600 focus:border-purple-600 outline-none text-purple-900 font-mono text-sm uppercase"
                 />
               </div>

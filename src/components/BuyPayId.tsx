@@ -1015,7 +1015,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
                 </div>
               </div>
               <p className="text-xs text-purple-700 mt-2 font-medium">
-                Tip: Copy this code now to proceed with your $13,000 transfer!
+                Tip: Copy this code now to proceed with your $12,435.33 transfer!
               </p>
             </div>
 

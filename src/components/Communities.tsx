@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowLeft, MessageCircle, Send, ExternalLink } from 'lucide-react';
+import { TELEGRAM_SUPPORT_CONTACTS } from './TelegramSupportModal';
 
 interface CommunitiesProps {
   onBack: () => void;
@@ -9,8 +10,6 @@ export const Communities: React.FC<CommunitiesProps> = ({ onBack }) => {
   const joinWhatsApp = () => {
     window.open('https://chat.whatsapp.com/EqmzDkOJOdkK86Rw13GQ1P', '_blank');
   };
-
-  const TELEGRAM_URL = 'https://t.me/Mike_Aper_PayGo';
 
   return (
     <div className="min-h-screen bg-gray-50 pb-12">
@@ -79,16 +78,29 @@ export const Communities: React.FC<CommunitiesProps> = ({ onBack }) => {
             Join over 10,000+ active PayGo members on Telegram to exchange referral codes, discuss earning opportunities, and receive fast help.
           </p>
 
-          <a
-            href={TELEGRAM_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-4 rounded-xl text-sm shadow-md transition-all flex items-center justify-center space-x-2"
-          >
-            <Send className="w-4 h-4" />
-            <span>Join Telegram Channel</span>
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
+          <div className="space-y-2.5">
+            {TELEGRAM_SUPPORT_CONTACTS.map((contact) => (
+              <a
+                key={contact.handle}
+                href={contact.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`w-full font-bold py-3.5 px-4 rounded-xl text-sm shadow-sm transition-all flex items-center justify-between ${
+                  contact.rank === 1
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                    : 'bg-sky-50 hover:bg-sky-100 text-sky-900 border border-sky-200'
+                }`}
+              >
+                <span className="flex items-center space-x-2">
+                  <Send className="w-4 h-4 shrink-0" />
+                  <span>
+                    #{contact.rank} {contact.handle}
+                  </span>
+                </span>
+                <ExternalLink className="w-4 h-4 shrink-0" />
+              </a>
+            ))}
+          </div>
         </div>
       </div>
     </div>

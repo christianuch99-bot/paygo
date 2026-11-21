@@ -106,7 +106,11 @@
         "authMethod": { "type": "string", "enum": ["email", "phone"] },
         "passwordHash": { "type": "string", "maxLength": 64, "pattern": "^[a-f0-9]+$" },
         "createdAt": { "type": "string", "maxLength": 64 },
-        "updatedAt": { "type": "string", "maxLength": 64 }
+        "updatedAt": { "type": "string", "maxLength": 64 },
+        "lastLoginAt": { "type": "string", "maxLength": 64 },
+        "lastActiveAt": { "type": "string", "maxLength": 64 },
+        "lastLoginDevice": { "type": "string", "maxLength": 100 },
+        "isOnline": { "type": "boolean" }
       },
       "required": ["name", "email", "balance"]
     },
@@ -190,6 +194,19 @@
         "updatedAt": { "type": "string", "maxLength": 64 }
       },
       "required": ["id", "status", "updatedAt"]
+    },
+    "SitePresence": {
+      "title": "Website Visitor Presence",
+      "description": "Real-time non-PII heartbeat for active website sessions displayed on Admin Dashboard Stats",
+      "type": "object",
+      "properties": {
+        "sessionId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "visitorType": { "type": "string", "enum": ["member", "guest"] },
+        "page": { "type": "string", "maxLength": 64 },
+        "active": { "type": "boolean" },
+        "lastActiveAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["sessionId", "visitorType", "page", "active", "lastActiveAt"]
     }
   },
   "firestore": {
@@ -228,6 +245,10 @@
     "/kycStatuses/{statusId}": {
       "schema": "KycStatus",
       "description": "PII-free real-time status lookup for account ID & SSI verification"
+    },
+    "/sitePresence/{sessionId}": {
+      "schema": "SitePresence",
+      "description": "Active website visitor heartbeats for real-time Admin Dashboard stats"
     }
   }
 }

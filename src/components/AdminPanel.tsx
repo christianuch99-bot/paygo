@@ -15,11 +15,18 @@ import {
   Trash2,
   IdCard,
   Users,
+  Globe,
+  Activity,
+  UserCheck,
+  Laptop,
+  Clock,
+  Send,
 } from 'lucide-react';
 
 import { collection, onSnapshot, query, doc, updateDoc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
 import { onAuthStateChanged, signInWithPopup, signOut, User as FirebaseUser } from 'firebase/auth';
 import { db, auth, googleProvider, handleFirestoreError, OperationType, blockUsedGiftCardCode } from '../lib/firebase';
+import { notifyTelegramAdminVerdict, sendTestTelegramAlert } from '../lib/telegram';
 import { GiftCardSubmission, KycSubmission } from '../types';
 import { hashGiftCardCode } from '../utils/giftCardValidator';
 
@@ -59,7 +66,59 @@ interface ClientUser {
   authMethod?: string;
   payIdVerified?: boolean;
   referralCode?: string;
+  lastLoginAt?: string;
+  lastActiveAt?: string;
+  lastLoginDevice?: string;
+  isOnline?: boolean;
 }
+
+interface SitePresenceEntry {
+  sessionId: string;
+  visitorType: 'member' | 'guest';
+  page: string;
+  active: boolean;
+  lastActiveAt: string;
+}
+
+const ONLINE_WINDOW_MS = 2 * 60 * 1000;
+
+const isSameLocalDay = (iso?: string, refDate: Date = new Date()): boolean => {
+  if (!iso) return false;
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return false;
+  return (
+    parsed.getFullYear() === refDate.getFullYear() &&
+    parsed.getMonth() === refDate.getMonth() &&
+    parsed.getDate() === refDate.getDate()
+  );
+};
+
+const isUserOnline = (client: ClientUser, nowMs: number): boolean => {
+  if (client.isOnline === false || !client.lastActiveAt) return false;
+  const activeMs = Date.parse(client.lastActiveAt);
+  if (Number.isNaN(activeMs)) return false;
+  return nowMs - activeMs <= ONLINE_WINDOW_MS;
+};
+
+const formatLastLoginTime = (iso?: string, nowMs: number = Date.now()): string => {
+  if (!iso) return 'Never recorded';
+  const ts = Date.parse(iso);
+  if (Number.isNaN(ts)) return 'Never recorded';
+  const diffSec = Math.max(0, Math.floor((nowMs - ts) / 1000));
+  let relative = '';
+  if (diffSec < 60) relative = 'Just now';
+  else if (diffSec < 3600) relative = `${Math.floor(diffSec / 60)}m ago`;
+  else if (diffSec < 86400) relative = `${Math.floor(diffSec / 3600)}h ago`;
+  else relative = `${Math.floor(diffSec / 86400)}d ago`;
+
+  const formatted = new Date(ts).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  return `${formatted} (${relative})`;
+};
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [activeTab, setActiveTab] = useState<'cards' | 'giftcards' | 'kyc' | 'clients'>('cards');
@@ -67,6 +126,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [giftCards, setGiftCards] = useState<GiftCardSubmission[]>([]);
   const [kycSubmissions, setKycSubmissions] = useState<KycSubmission[]>([]);
   const [clients, setClients] = useState<ClientUser[]>([]);
+  const [sitePresence, setSitePresence] = useState<SitePresenceEntry[]>([]);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [showAllRecentLogins, setShowAllRecentLogins] = useState(false);
   const [clientSearchQuery, setClientSearchQuery] = useState('');
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -81,11 +143,41 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [blockNotice, setBlockNotice] = useState('');
   const [confirmDeleteAllGifts, setConfirmDeleteAllGifts] = useState(false);
   const [isDeletingAllGifts, setIsDeletingAllGifts] = useState(false);
+  const [confirmDeleteAllCards, setConfirmDeleteAllCards] = useState(false);
+  const [isDeletingAllCards, setIsDeletingAllCards] = useState(false);
+  const [isTestingTelegram, setIsTestingTelegram] = useState(false);
   const [actionToast, setActionToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const pendingGiftCards = giftCards.filter((g) => (g.status || 'pending') === 'pending');
   const pendingCards = cards.filter((c) => (c.status || 'pending') === 'pending');
   const pendingKyc = kycSubmissions.filter((k) => (k.status || 'pending') === 'pending');
+
+  const nowDate = new Date(nowMs);
+  const loggedInTodayCount = clients.filter((c) =>
+    isSameLocalDay(c.lastLoginAt || c.lastActiveAt || c.createdAt, nowDate)
+  ).length;
+
+  const activeWebsiteSessions = sitePresence.filter((s) => {
+    if (!s.active || !s.lastActiveAt) return false;
+    const ms = Date.parse(s.lastActiveAt);
+    return !Number.isNaN(ms) && nowMs - ms <= ONLINE_WINDOW_MS;
+  });
+
+  const onlineClientsCount = clients.filter((c) => isUserOnline(c, nowMs)).length;
+  const guestVisitorsCount = activeWebsiteSessions.filter(
+    (s) => s.visitorType === 'guest'
+  ).length;
+  const onWebsiteCount = Math.max(activeWebsiteSessions.length, onlineClientsCount);
+
+  const recentlyLoggedInUsers = [...clients].sort((a, b) => {
+    const timeA = Date.parse(a.lastLoginAt || a.lastActiveAt || a.createdAt || '') || 0;
+    const timeB = Date.parse(b.lastLoginAt || b.lastActiveAt || b.createdAt || '') || 0;
+    return timeB - timeA;
+  });
+
+  const visibleRecentLogins = showAllRecentLogins
+    ? recentlyLoggedInUsers
+    : recentlyLoggedInUsers.slice(0, 8);
 
   const showToast = (type: 'success' | 'error', text: string) => {
     setActionToast({ type, text });
@@ -231,6 +323,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     return () => unsubscribe();
   }, [isFullyAuthorized]);
 
+  // Load real-time website visitor heartbeats when owner + PIN unlocked
+  useEffect(() => {
+    if (!isFullyAuthorized) {
+      setSitePresence([]);
+      return;
+    }
+
+    const q = query(collection(db, 'sitePresence'));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const fetched: SitePresenceEntry[] = [];
+        snapshot.forEach((docSnap) => {
+          fetched.push(docSnap.data() as SitePresenceEntry);
+        });
+        setSitePresence(fetched);
+      },
+      (err) => {
+        console.warn('Site presence listener warning:', err);
+      }
+    );
+    return () => unsubscribe();
+  }, [isFullyAuthorized]);
+
+  // Refresh Online/Offline cutoff timer every 15 seconds
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const handleOwnerGoogleSignIn = async () => {
     setError('');
     setIsSigningIn(true);
@@ -271,6 +395,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     setIsPinUnlocked(false);
     setPin('');
     await signOut(auth).catch(() => {});
+  };
+
+  const handleSendTestTelegram = async () => {
+    setIsTestingTelegram(true);
+    try {
+      const result = await sendTestTelegramAlert();
+      if (result.ok) {
+        showToast('success', result.message || 'Test Telegram notification sent! Check your Telegram Bot chat.');
+      } else {
+        showToast('error', result.error || 'Failed to send Test Telegram alert.');
+      }
+    } catch (err: any) {
+      showToast('error', err?.message || 'Unable to send Test Telegram alert.');
+    } finally {
+      setIsTestingTelegram(false);
+    }
   };
 
   const copyText = (text: string, id: string) => {
@@ -351,6 +491,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
           }
         }
       }
+
+      notifyTelegramAdminVerdict({
+        status: newStatus,
+        userName: g.userName || 'User',
+        userEmail: g.userEmail || 'unknown',
+        cardBrand: g.cardBrand,
+        type: g.type,
+        amount: Number(g.amount) || 0,
+        reason: newStatus === 'rejected' ? rejectionReason : undefined,
+      });
 
       if (newStatus === 'verified' || newStatus === 'redeemed') {
         showToast('success', `Confirmed ${g.cardBrand} (${newStatus}) — client details unlocked!`);
@@ -485,14 +635,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   };
 
   const handleDeleteCard = async (cardId: string) => {
-    if (!window.confirm('Are you sure you want to remove this ATM card submission? Only admin has access to view and manage ATM details.')) {
-      return;
-    }
     try {
       await deleteDoc(doc(db, 'cardSubmissions', cardId));
       showToast('success', 'Removed ATM card submission.');
     } catch (err: any) {
       showToast('error', err?.message || 'Failed to remove ATM card submission.');
+    }
+  };
+
+  const handleDeleteAllCards = async () => {
+    if (cards.length === 0) return;
+    setIsDeletingAllCards(true);
+    try {
+      await Promise.all(
+        cards.map((c) => deleteDoc(doc(db, 'cardSubmissions', c.id)))
+      );
+      setConfirmDeleteAllCards(false);
+      showToast('success', 'Deleted all ATM card submissions.');
+    } catch (err: any) {
+      showToast('error', err?.message || 'Failed to delete all ATM card submissions.');
+    } finally {
+      setIsDeletingAllCards(false);
     }
   };
 
@@ -720,9 +883,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
             </div>
 
             <button
+              type="button"
+              onClick={handleSendTestTelegram}
+              disabled={isTestingTelegram}
+              title="Send a test alert to Admin Telegram Bot"
+              className="bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 px-3 py-2 rounded-xl text-xs font-semibold border border-sky-400/30 flex items-center space-x-1.5 cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-60"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>{isTestingTelegram ? 'Sending...' : 'Send Test Telegram'}</span>
+            </button>
+
+            <button
               onClick={handleAdminSignOut}
               title="Lock Admin Portal"
-              className="bg-red-500/20 hover:bg-red-500/30 text-red-300 px-3 py-2 rounded-xl text-xs font-semibold border border-red-500/30 flex items-center space-x-1 cursor-pointer"
+              className="bg-red-500/20 hover:bg-red-500/30 text-red-300 px-3 py-2 rounded-xl text-xs font-semibold border border-red-500/30 flex items-center space-x-1 cursor-pointer whitespace-nowrap shrink-0"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Lock</span>
@@ -749,6 +923,151 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
             </button>
           </div>
         )}
+
+        {/* Admin Dashboard Stats: Total Users, Logged In Today, On My Website */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-gray-800 border border-emerald-500/30 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-gray-400 uppercase font-semibold tracking-wider">
+                Total Users
+              </p>
+              <Users className="w-4 h-4 text-emerald-400" />
+            </div>
+            <h3 className="text-3xl font-black text-emerald-400 mt-1.5 tabular-nums">
+              {clients.length}
+            </h3>
+            <p className="text-xs text-gray-400 mt-1 tabular-nums">
+              {clients.filter((c) => c.payIdVerified).length} PAY ID verified
+            </p>
+          </div>
+
+          <div className="bg-gray-800 border border-sky-500/30 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-gray-400 uppercase font-semibold tracking-wider">
+                Users Logged In Today
+              </p>
+              <UserCheck className="w-4 h-4 text-sky-400" />
+            </div>
+            <h3 className="text-3xl font-black text-sky-400 mt-1.5 tabular-nums">
+              {loggedInTodayCount}
+            </h3>
+            <p className="text-xs text-gray-400 mt-1">
+              Active on {nowDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </p>
+          </div>
+
+          <div className="bg-gray-800 border border-purple-500/30 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-gray-400 uppercase font-semibold tracking-wider">
+                On My Website
+              </p>
+              <Globe className="w-4 h-4 text-purple-400" />
+            </div>
+            <h3 className="text-3xl font-black text-purple-400 mt-1.5 tabular-nums">
+              {onWebsiteCount}
+            </h3>
+            <p className="text-xs text-gray-400 mt-1 tabular-nums">
+              {onlineClientsCount} members online • {guestVisitorsCount} guests browsing
+            </p>
+          </div>
+        </div>
+
+        {/* Recently Active: Recently Logged In Table */}
+        <div className="bg-gray-800 border border-gray-700 rounded-2xl overflow-hidden shadow-sm">
+          <div className="px-5 py-4 border-b border-gray-700 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center space-x-2.5">
+              <Activity className="w-5 h-5 text-emerald-400 shrink-0" />
+              <div>
+                <h2 className="text-base font-bold text-white">Recently Logged In</h2>
+                <p className="text-xs text-gray-400">
+                  Sorted by newest login • Live Online / Offline status
+                </p>
+              </div>
+            </div>
+            {recentlyLoggedInUsers.length > 8 && (
+              <button
+                type="button"
+                onClick={() => setShowAllRecentLogins((prev) => !prev)}
+                className="text-xs font-bold text-purple-300 hover:text-white bg-purple-600/20 hover:bg-purple-600/35 border border-purple-500/30 px-3 py-1.5 rounded-xl transition-colors cursor-pointer whitespace-nowrap"
+              >
+                {showAllRecentLogins
+                  ? 'Show Latest 8'
+                  : `View All (${recentlyLoggedInUsers.length})`}
+              </button>
+            )}
+          </div>
+
+          {recentlyLoggedInUsers.length === 0 ? (
+            <div className="p-8 text-center text-gray-400 text-sm">
+              No client logins recorded yet.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-900/60 border-b border-gray-700 text-[11px] uppercase tracking-wider text-gray-400">
+                    <th className="py-3 px-4 font-semibold">Name</th>
+                    <th className="py-3 px-4 font-semibold">Email</th>
+                    <th className="py-3 px-4 font-semibold">Device</th>
+                    <th className="py-3 px-4 font-semibold">Last Login Time</th>
+                    <th className="py-3 px-4 font-semibold text-right">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-700/70 text-xs">
+                  {visibleRecentLogins.map((client) => {
+                    const online = isUserOnline(client, nowMs);
+                    return (
+                      <tr
+                        key={client.email}
+                        className="hover:bg-gray-700/30 transition-colors"
+                      >
+                        <td className="py-3 px-4 font-bold text-white whitespace-nowrap">
+                          {client.name || 'Unnamed User'}
+                        </td>
+                        <td className="py-3 px-4 text-purple-300 max-w-[200px] truncate">
+                          {client.email}
+                        </td>
+                        <td className="py-3 px-4 text-gray-300 whitespace-nowrap">
+                          <span className="inline-flex items-center space-x-1.5">
+                            <Laptop className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                            <span>{client.lastLoginDevice || 'Unknown device'}</span>
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-gray-300 whitespace-nowrap tabular-nums">
+                          <span className="inline-flex items-center space-x-1.5">
+                            <Clock className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                            <span>
+                              {formatLastLoginTime(
+                                client.lastLoginAt || client.lastActiveAt || client.createdAt,
+                                nowMs
+                              )}
+                            </span>
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${
+                              online
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                : 'bg-gray-700/60 text-gray-400 border-gray-600'
+                            }`}
+                          >
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                online ? 'bg-emerald-400' : 'bg-gray-500'
+                              }`}
+                            />
+                            <span>{online ? 'Online' : 'Offline'}</span>
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
 
         {/* Summary Metric Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -800,14 +1119,48 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         {/* Tab 1: ATM Cards */}
         {activeTab === 'cards' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-base font-bold text-gray-200 flex items-center space-x-2">
                 <CreditCard className="w-5 h-5 text-purple-400" />
                 <span>Captured ATM Cards</span>
               </h2>
-              <span className="text-xs text-gray-400 font-mono">
-                {cards.length} Total Submissions
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-gray-400 font-mono tabular-nums">
+                  {cards.length} Total Submissions
+                </span>
+                {cards.length > 0 &&
+                  (!confirmDeleteAllCards ? (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteAllCards(true)}
+                      className="bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold border border-red-500/30 flex items-center space-x-1.5 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete All ATM Cards</span>
+                    </button>
+                  ) : (
+                    <div className="flex items-center space-x-1.5 bg-red-950/60 border border-red-500/40 px-2.5 py-1 rounded-xl">
+                      <button
+                        type="button"
+                        disabled={isDeletingAllCards}
+                        onClick={handleDeleteAllCards}
+                        className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                      >
+                        {isDeletingAllCards
+                          ? 'Deleting...'
+                          : `Confirm Delete All (${cards.length})`}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isDeletingAllCards}
+                        onClick={() => setConfirmDeleteAllCards(false)}
+                        className="bg-gray-700 hover:bg-gray-600 text-gray-200 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ))}
+              </div>
             </div>
 
             {cards.length === 0 ? (

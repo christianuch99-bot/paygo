@@ -100,7 +100,7 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport,
           onClick={
             onOpenSupport
               ? onOpenSupport
-              : () => window.open('https://chat.whatsapp.com/EqmzDkOJOdkK86Rw13GQ1P', '_blank')
+              : () => window.open('https://t.me/Mike_Aper_PayGo', '_blank')
           }
           className="flex items-center space-x-1.5 text-white/90 hover:text-white bg-white/15 px-3.5 py-1.5 rounded-full text-sm font-medium backdrop-blur-sm transition-all cursor-pointer"
         >

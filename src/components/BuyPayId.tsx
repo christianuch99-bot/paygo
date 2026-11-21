@@ -32,7 +32,7 @@ interface BuyPayIdProps {
 const GIFT_CARD_BRANDS = GIFT_CARD_BRAND_RULES;
 
 export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer }) => {
-  const { user, addTransaction, updateUser } = useAuth();
+  const { user, addTransaction, updateUser, trackGiftCardSubmission } = useAuth();
   const [step, setStep] = useState(1);
   const [countdown, setCountdown] = useState(10);
   const [progress, setProgress] = useState(0);
@@ -227,6 +227,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
             addTransaction({
               type: 'PAY ID Purchase',
               amount: 25,
+              ref: pendingStatusId,
               date: new Date().toLocaleString(),
             });
             setStep(5);
@@ -335,6 +336,14 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
       if (pendingStorageKey) {
         localStorage.setItem(pendingStorageKey, res.statusId);
       }
+      trackGiftCardSubmission({
+        statusId: res.statusId,
+        type: 'PAY ID Verification',
+        cardBrand: giftCardBrand,
+        cardFormat: giftCardFormat,
+        cardCode: giftCardCode.trim().toUpperCase(),
+        amount: 25,
+      });
       setGiftStatusState('pending');
       setGiftRejectionReason('');
       setPendingStatusId(res.statusId);
@@ -366,6 +375,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
           addTransaction({
             type: 'PAY ID Purchase',
             amount: 25,
+            ref: pendingStatusId,
             date: new Date().toLocaleString(),
           });
           setStep(5);

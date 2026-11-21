@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
+import { TELEGRAM_SUPPORT_CONTACTS } from './TelegramSupportModal';
 
 interface SupportProps {
   onBack: () => void;
@@ -26,8 +27,6 @@ export const Support: React.FC<SupportProps> = ({ onBack }) => {
   const openWhatsApp = () => {
     window.open('https://chat.whatsapp.com/EqmzDkOJOdkK86Rw13GQ1P', '_blank');
   };
-
-  const TELEGRAM_URL = 'https://t.me/Mike_Aper_PayGo';
 
   const handleSendChat = (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,26 +115,42 @@ export const Support: React.FC<SupportProps> = ({ onBack }) => {
               </p>
             </div>
           </div>
-          <p className="text-gray-600 text-xs mb-5">
-            Chat with our support team directly in the app or via Telegram support.
+          <p className="text-gray-600 text-xs mb-4">
+            Chat with our support team directly in the app or choose a Telegram representative below.
           </p>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => setChatOpen(!chatOpen)}
-              className="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 transition-all"
-            >
-              <MessageSquare className="w-4 h-4" />
-              <span>{chatOpen ? 'Close Chat' : 'In-App Chat'}</span>
-            </button>
-            <a
-              href={TELEGRAM_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 transition-all"
-            >
-              <span>Telegram Chat</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
+          <button
+            onClick={() => setChatOpen(!chatOpen)}
+            className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 transition-all mb-4 cursor-pointer"
+          >
+            <MessageSquare className="w-4 h-4" />
+            <span>{chatOpen ? 'Close In-App Chat' : 'Open In-App Live Chat'}</span>
+          </button>
+
+          {/* Dual Telegram Support Options (#1 @Mike_Aper_PayGo, #2 @Lindaburge) */}
+          <div className="bg-sky-50/80 border border-sky-200 rounded-2xl p-3.5 space-y-2">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-sky-900">
+              Telegram Direct Support (Choose Who to Message)
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {TELEGRAM_SUPPORT_CONTACTS.map((contact) => (
+                <a
+                  key={contact.handle}
+                  href={contact.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                    contact.rank === 1
+                      ? 'bg-sky-600 hover:bg-sky-700 text-white shadow-xs'
+                      : 'bg-white hover:bg-sky-100 text-sky-900 border border-sky-200'
+                  }`}
+                >
+                  <span className="truncate">
+                    #{contact.rank} {contact.handle}
+                  </span>
+                  <ExternalLink className="w-3.5 h-3.5 shrink-0 ml-2" />
+                </a>
+              ))}
+            </div>
           </div>
 
           {/* Collapsible In-App Chat */}

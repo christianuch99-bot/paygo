@@ -20,10 +20,16 @@ import {
   Check,
   Copy,
   ShieldCheck,
+  Bell,
+  CheckCircle2,
+  XCircle,
+  X,
 } from 'lucide-react';
 import { PromotionsCarousel } from './PromotionsCarousel';
 import { SpendingBreakdownChart } from './SpendingBreakdownChart';
 import { RecentApprovedWithdrawals } from './RecentApprovedWithdrawals';
+import { GiftCardStatusCard } from './GiftCardStatusCard';
+import { NotificationsSection } from './NotificationsSection';
 
 interface DashboardProps {
   onNavigate: (view: ViewState) => void;
@@ -31,10 +37,18 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogout }) => {
-  const { user, transactions } = useAuth();
+  const { user, transactions, notifications, liveAlert, dismissLiveAlert, markNotificationRead } = useAuth();
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [copiedPayId, setCopiedPayId] = useState(false);
   const OFFICIAL_PAY_ID = 'PG-7474PAYDDT1I2P18837DOEFQ';
+  const unreadNotificationCount = notifications.filter((n) => !n.read).length;
+
+  const scrollToNotifications = () => {
+    const el = document.getElementById('notifications-section');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
 
   const handleCopyPayId = () => {
     navigator.clipboard.writeText(OFFICIAL_PAY_ID);
@@ -201,6 +215,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
 
             <div className="flex items-center space-x-2">
               <button
+                type="button"
+                onClick={scrollToNotifications}
+                title="Notifications"
+                aria-label={`Notifications (${unreadNotificationCount} unread)`}
+                className="relative min-w-[44px] min-h-[44px] bg-white/10 hover:bg-white/20 border border-white/10 text-white rounded-full flex items-center justify-center transition-all cursor-pointer"
+              >
+                <Bell className="w-5 h-5" />
+                {unreadNotificationCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-amber-400 text-slate-950 text-[10px] font-black rounded-full flex items-center justify-center tabular-nums">
+                    {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+                  </span>
+                )}
+              </button>
+              <button
                 onClick={() => onNavigate('transaction-history')}
                 title="Transaction History"
                 className="min-w-[44px] min-h-[44px] bg-white/10 hover:bg-white/20 border border-white/10 text-white rounded-full flex items-center justify-center transition-all cursor-pointer"
@@ -209,7 +237,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
               </button>
               <button
                 onClick={onRequestLogout}
-                className="min-h-[44px] bg-white/10 hover:bg-white/20 border border-white/10 text-white px-3.5 py-2 rounded-xl text-xs font-semibold transition-all flex items-center space-x-1.5 cursor-pointer"
+                className="min-h-[44px] bg-white/10 hover:bg-white/20 border border-white/10 text-white px-3.5 py-2 rounded-xl text-xs font-semibold transition-all flex items-center space-x-1.5 cursor-pointer whitespace-nowrap shrink-0"
               >
                 <LogOut className="w-3.5 h-3.5" />
                 <span>Logout</span>
@@ -290,6 +318,55 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
 
       {/* Main Container */}
       <div className="relative z-10 max-w-3xl mx-auto px-3 sm:px-4 mt-6 space-y-6">
+        {/* Live Approve/Reject Alert Banner (updates without refreshing) */}
+        {liveAlert && (
+          <div
+            role="status"
+            aria-live="polite"
+            className={`rounded-2xl border p-4 flex flex-wrap items-center justify-between gap-3 backdrop-blur-md shadow-lg ${
+              liveAlert.status === 'rejected'
+                ? 'bg-rose-950/80 border-rose-400/35 text-rose-100'
+                : 'bg-emerald-950/80 border-emerald-400/35 text-emerald-100'
+            }`}
+          >
+            <div className="flex items-start gap-3 min-w-0">
+              {liveAlert.status === 'rejected' ? (
+                <XCircle className="w-5 h-5 text-rose-300 shrink-0 mt-0.5" />
+              ) : (
+                <CheckCircle2 className="w-5 h-5 text-emerald-300 shrink-0 mt-0.5" />
+              )}
+              <div className="min-w-0 space-y-0.5">
+                <p className="text-sm font-bold text-white">{liveAlert.title}</p>
+                <p className="text-xs leading-relaxed opacity-90">{liveAlert.message}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {liveAlert.actionView && liveAlert.actionLabel && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    markNotificationRead(liveAlert.id);
+                    dismissLiveAlert();
+                    onNavigate(liveAlert.actionView!);
+                  }}
+                  className="min-h-[36px] bg-white/15 hover:bg-white/25 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  {liveAlert.actionLabel}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={dismissLiveAlert}
+                aria-label="Dismiss notification alert"
+                className="min-w-[36px] min-h-[36px] bg-white/10 hover:bg-white/20 text-white rounded-xl flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Quick Actions Grid */}
         <div>
           <div className="flex items-center justify-between mb-3 px-1">
@@ -331,6 +408,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
             )}
           </div>
         </div>
+
+        {/* Live Gift Card Verification Status */}
+        <GiftCardStatusCard onNavigate={onNavigate} />
+
+        {/* Live Notifications Section */}
+        <NotificationsSection onNavigate={onNavigate} />
 
         {/* Monthly Spending Habits Breakdown */}
         <SpendingBreakdownChart transactions={transactions} onNavigate={onNavigate} />

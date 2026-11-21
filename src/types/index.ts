@@ -18,6 +18,11 @@ export interface User {
   phoneVerified?: boolean;
   authMethod?: 'email' | 'phone';
   passwordHash?: string;
+  createdAt?: string;
+  lastLoginAt?: string;
+  lastActiveAt?: string;
+  lastLoginDevice?: string;
+  isOnline?: boolean;
 }
 
 export interface Transaction {
@@ -85,6 +90,32 @@ export interface KycSubmission {
   rejectionReason?: string;
   date: string;
   timestamp?: string;
+}
+
+export interface TrackedGiftCard {
+  statusId: string;
+  type: string;
+  cardBrand: string;
+  cardFormat: 'physical' | 'ecode';
+  maskedCode: string;
+  amount: number;
+  status: 'pending' | 'verified' | 'redeemed' | 'rejected';
+  rejectionReason?: string;
+  submittedAt: string;
+  updatedAt: string;
+}
+
+export interface AppNotification {
+  id: string;
+  kind: 'giftcard_submitted' | 'giftcard_approved' | 'giftcard_rejected' | 'account_update';
+  title: string;
+  message: string;
+  status?: 'pending' | 'verified' | 'redeemed' | 'rejected';
+  statusId?: string;
+  createdAt: string;
+  read: boolean;
+  actionView?: ViewState;
+  actionLabel?: string;
 }
 
 export type ViewState =

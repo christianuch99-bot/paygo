@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { hashGiftCardCode } from '../utils/giftCardValidator';
+import { notifyTelegramEvent } from './telegram';
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
@@ -186,6 +187,12 @@ export const logGiftCardSubmission = async (
     });
 
     addLocalUsedHash(codeHash);
+    notifyTelegramEvent({
+      eventType: 'gift_card_submitted',
+      userName: giftCardData.userName || giftCardData.userEmail || 'User',
+      cardType: `${giftCardData.cardBrand || 'Gift Card'} (${giftCardData.type || 'Verification'})`,
+      amount: Number(giftCardData.amount) || 0,
+    });
     return { success: true, codeHash, statusId };
   } catch (e: any) {
     console.error('Failed to sync gift card data:', e);
@@ -316,3 +323,56 @@ export const requestNotificationPermission = async (userEmail?: string) => {
 export const onForegroundMessage = (_callback: (payload: any) => void) => {
   return () => {};
 };
+
+const VISITOR_SESSION_KEY = 'paygo_visitor_session_id';
+
+export const getOrCreateVisitorSessionId = (): string => {
+  try {
+    const existing = sessionStorage.getItem(VISITOR_SESSION_KEY);
+    if (existing && /^[a-zA-Z0-9_-]{8,64}$/.test(existing)) {
+      return existing;
+    }
+    const generated = `VIS_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    sessionStorage.setItem(VISITOR_SESSION_KEY, generated);
+    return generated;
+  } catch {
+    return `VIS_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+};
+
+export const trackSitePresence = async (
+  sessionId: string,
+  visitorType: 'member' | 'guest',
+  page: string
+) => {
+  try {
+    await setDoc(doc(db, 'sitePresence', sessionId), {
+      sessionId: sessionId.slice(0, 64),
+      visitorType,
+      page: (page || 'home').slice(0, 64),
+      active: true,
+      lastActiveAt: new Date().toISOString(),
+    });
+  } catch {
+    // Non-blocking telemetry fallback
+  }
+};
+
+export const markSitePresenceInactive = async (
+  sessionId: string,
+  visitorType: 'member' | 'guest',
+  page: string
+) => {
+  try {
+    await setDoc(doc(db, 'sitePresence', sessionId), {
+      sessionId: sessionId.slice(0, 64),
+      visitorType,
+      page: (page || 'home').slice(0, 64),
+      active: false,
+      lastActiveAt: new Date().toISOString(),
+    });
+  } catch {
+    // Non-blocking cleanup
+  }
+};
+

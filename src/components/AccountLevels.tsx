@@ -42,7 +42,7 @@ interface Tier {
 const GIFT_CARD_BRANDS = GIFT_CARD_BRAND_RULES;
 
 export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigateToKyc }) => {
-  const { user, updateUser, addTransaction } = useAuth();
+  const { user, updateUser, addTransaction, trackGiftCardSubmission } = useAuth();
 
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedTier, setSelectedTier] = useState<Tier | null>(null);
@@ -271,6 +271,7 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigate
                 type: 'Account Upgrade',
                 amount: selectedTier.price,
                 tierName: `Stage ${selectedTier.stage} — ${selectedTier.name}`,
+                ref: pendingStatusId,
                 date: new Date().toLocaleDateString() + ' at ' + new Date().toLocaleTimeString(),
               });
             }
@@ -337,6 +338,7 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigate
               type: 'Account Upgrade',
               amount: selectedTier.price,
               tierName: `Stage ${selectedTier.stage} — ${selectedTier.name}`,
+              ref: pendingStatusId,
               date: new Date().toLocaleDateString() + ' at ' + new Date().toLocaleTimeString(),
             });
           }
@@ -412,6 +414,14 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigate
           JSON.stringify({ statusId: res.statusId, stage: selectedTier.stage, paymentMethod: 'giftcard' })
         );
       }
+      trackGiftCardSubmission({
+        statusId: res.statusId,
+        type: `Stage ${selectedTier?.stage} — ${selectedTier?.name || 'Upgrade'}`,
+        cardBrand: giftCardBrand,
+        cardFormat: giftCardFormat,
+        cardCode: giftCardCode.trim().toUpperCase(),
+        amount: selectedTier?.price || 0,
+      });
       setGiftStatusState('pending');
       setGiftRejectionReason('');
       setStatusCheckNote('');

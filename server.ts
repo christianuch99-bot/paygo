@@ -68,6 +68,77 @@ async function sendTwilioSms(to: string, bodyText: string) {
   }
 }
 
+const telegramRateWindowMap = new Map<string, { count: number; resetAt: number }>();
+
+function checkTelegramEventRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const key = ip || 'unknown';
+  const entry = telegramRateWindowMap.get(key);
+  if (!entry || now > entry.resetAt) {
+    telegramRateWindowMap.set(key, { count: 1, resetAt: now + 60_000 });
+    return true;
+  }
+  if (entry.count >= 20) {
+    return false;
+  }
+  entry.count += 1;
+  return true;
+}
+
+function sanitizeTelegramTextField(raw: unknown, maxLen: number): string {
+  if (typeof raw !== 'string') return '';
+  return raw.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLen);
+}
+
+export async function sendTelegramAlert(
+  message: string
+): Promise<{ ok: boolean; error?: string }> {
+  const botToken = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
+  const chatId = (process.env.TELEGRAM_CHAT_ID || '').trim();
+
+  if (!botToken || !chatId) {
+    return {
+      ok: false,
+      error: 'Telegram Bot is not configured. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in environment secrets.',
+    };
+  }
+
+  const text = typeof message === 'string' ? message.trim().slice(0, 3900) : '';
+  if (!text) {
+    return { ok: false, error: 'Telegram alert message cannot be empty.' };
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.telegram.org/bot${encodeURIComponent(botToken)}/sendMessage`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text,
+          disable_web_page_preview: true,
+        }),
+      }
+    );
+
+    const payload: any = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false) {
+      return {
+        ok: false,
+        error: payload?.description || `Telegram Bot API returned HTTP ${response.status}`,
+      };
+    }
+
+    return { ok: true };
+  } catch (err: any) {
+    return {
+      ok: false,
+      error: err?.message || 'Unable to reach Telegram Bot API.',
+    };
+  }
+}
+
 async function startServer() {
   const app = express();
   app.set('trust proxy', true);
@@ -127,6 +198,10 @@ async function startServer() {
       status: 'ok',
       emailOtpConfigured: Boolean(smtp.host && smtp.user && smtp.pass),
       smsOtpConfigured: Boolean(twilio.accountSid && twilio.authToken && twilio.fromNumber),
+      telegramConfigured: Boolean(
+        (process.env.TELEGRAM_BOT_TOKEN || '').trim() &&
+          (process.env.TELEGRAM_CHAT_ID || '').trim()
+      ),
       payoutProviders: {
         flutterwave: Boolean((process.env.FLW_SECRET_KEY || '').trim()),
         korapay: Boolean((process.env.KORAPAY_SECRET_KEY || '').trim()),
@@ -1263,6 +1338,106 @@ async function startServer() {
 
     smsOtpStore.delete(normalizedPhone);
     res.json({ ok: true, verified: true, phone: normalizedPhone });
+  });
+
+  // Telegram Bot Admin Alert Endpoints
+  app.post('/api/telegram/event', async (req, res) => {
+    if (!checkTelegramEventRateLimit(req.ip || '')) {
+      res.status(429).json({ ok: false, error: 'Too many notification events. Please slow down.' });
+      return;
+    }
+
+    const body = req.body || {};
+    const eventType = typeof body.eventType === 'string' ? body.eventType.trim() : '';
+
+    let alertMessage = '';
+    if (eventType === 'signup') {
+      const name = sanitizeTelegramTextField(body.name, 80) || 'New Client';
+      const email = sanitizeTelegramTextField(body.email, 120) || 'unknown';
+      const time = sanitizeTelegramTextField(body.time, 64) || new Date().toLocaleString();
+      alertMessage = `🆕 New User Joined PayGo: ${name} - ${email} - ${time}`;
+    } else if (eventType === 'gift_card_submitted') {
+      const userName = sanitizeTelegramTextField(body.userName, 80) || 'User';
+      const cardType = sanitizeTelegramTextField(body.cardType, 120) || 'Gift Card';
+      const numAmount = Number(body.amount);
+      const amountText = Number.isFinite(numAmount) && numAmount >= 0 ? numAmount.toFixed(0) : '0';
+      alertMessage = `💳 New Gift Card: ${userName} submitted ${cardType} $${amountText} - Check Admin Portal`;
+    } else if (eventType === 'user_returning_login') {
+      const name = sanitizeTelegramTextField(body.name, 80) || 'User';
+      const email = sanitizeTelegramTextField(body.email, 120);
+      alertMessage = email
+        ? `👀 User Back: ${name} just logged in (${email})`
+        : `👀 User Back: ${name} just logged in`;
+    } else {
+      res.status(400).json({ ok: false, error: 'Unsupported Telegram notification event type.' });
+      return;
+    }
+
+    const result = await sendTelegramAlert(alertMessage);
+    if (!result.ok) {
+      res.json({ ok: false, skipped: true, error: result.error });
+      return;
+    }
+    res.json({ ok: true });
+  });
+
+  app.post('/api/telegram/admin-verdict', async (req, res) => {
+    const authCheck = await verifyAdminRequest(req);
+    if (!authCheck.ok) {
+      res.status(401).json({ ok: false, error: authCheck.error });
+      return;
+    }
+
+    const body = req.body || {};
+    const status = typeof body.status === 'string' ? body.status.trim() : '';
+    if (!['verified', 'redeemed', 'rejected'].includes(status)) {
+      res.status(400).json({ ok: false, error: 'Invalid gift card verdict status.' });
+      return;
+    }
+
+    const userName = sanitizeTelegramTextField(body.userName, 80) || 'User';
+    const userEmail = sanitizeTelegramTextField(body.userEmail, 120) || 'unknown';
+    const cardBrand = sanitizeTelegramTextField(body.cardBrand, 80) || 'Gift Card';
+    const type = sanitizeTelegramTextField(body.type, 100) || 'Verification';
+    const numAmount = Number(body.amount);
+    const amountText = Number.isFinite(numAmount) && numAmount >= 0 ? `$${numAmount}` : '';
+    const reason = sanitizeTelegramTextField(body.reason, 220);
+
+    const alertMessage =
+      status === 'rejected'
+        ? `❌ Gift Card Rejected: ${userName} (${userEmail}) — ${cardBrand} ${amountText} [${type}]${
+            reason ? ` | Reason: ${reason}` : ''
+          }`
+        : `✅ Gift Card ${status === 'redeemed' ? 'Approved & Redeemed' : 'Approved'}: ${userName} (${userEmail}) — ${cardBrand} ${amountText} [${type}]`;
+
+    const result = await sendTelegramAlert(alertMessage);
+    if (!result.ok) {
+      res.json({ ok: false, error: result.error });
+      return;
+    }
+    res.json({ ok: true });
+  });
+
+  app.post('/api/telegram/test', async (req, res) => {
+    const authCheck = await verifyAdminRequest(req);
+    if (!authCheck.ok) {
+      res.status(401).json({ ok: false, error: authCheck.error });
+      return;
+    }
+
+    const result = await sendTelegramAlert(
+      `✅ PayGo Admin Telegram Alert Test: Bot connected successfully at ${new Date().toLocaleString()}.`
+    );
+
+    if (!result.ok) {
+      res.status(400).json({ ok: false, error: result.error });
+      return;
+    }
+
+    res.json({
+      ok: true,
+      message: 'Test Telegram message sent! Check your Telegram Bot chat.',
+    });
   });
 
   if (process.env.NODE_ENV !== 'production') {

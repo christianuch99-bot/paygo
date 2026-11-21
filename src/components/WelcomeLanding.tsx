@@ -29,7 +29,7 @@ export const WelcomeLanding: React.FC<WelcomeLandingProps> = ({
     if (onOpenSupport) {
       onOpenSupport();
     } else {
-      window.open('https://chat.whatsapp.com/EqmzDkOJOdkK86Rw13GQ1P', '_blank');
+      window.open('https://t.me/Mike_Aper_PayGo', '_blank');
     }
   };
 

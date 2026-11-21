@@ -100,7 +100,7 @@ service cloud.firestore {
 
     function isValidUserProfile(data) {
       return data.keys().hasAll(['name', 'email', 'balance'])
-        && data.keys().hasOnly(['name', 'email', 'phone', 'balance', 'referralBalance', 'totalReferrals', 'accountLevel', 'avatarUrl', 'referralCode', 'payIdVerified', 'kycVerified', 'kycStatus', 'kycRejectionReason', 'kycStatusId', 'cardRejectionReason', 'emailVerified', 'phoneVerified', 'authMethod', 'passwordHash', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'email', 'phone', 'balance', 'referralBalance', 'totalReferrals', 'accountLevel', 'avatarUrl', 'referralCode', 'payIdVerified', 'kycVerified', 'kycStatus', 'kycRejectionReason', 'kycStatusId', 'cardRejectionReason', 'emailVerified', 'phoneVerified', 'authMethod', 'passwordHash', 'createdAt', 'updatedAt', 'lastLoginAt', 'lastActiveAt', 'lastLoginDevice', 'isOnline'])
         && data.name is string && data.name.size() > 0 && data.name.size() <= 100
         && data.email is string && data.email.size() > 0 && data.email.size() <= 150
         && (!('phone' in data) || (data.phone is string && data.phone.size() <= 30))
@@ -121,7 +121,11 @@ service cloud.firestore {
         && (!('authMethod' in data) || data.authMethod in ['email', 'phone'])
         && (!('passwordHash' in data) || (data.passwordHash is string && data.passwordHash.size() == 64 && data.passwordHash.matches('^[a-f0-9]+$')))
         && (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64))
-        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64))
+        && (!('lastLoginAt' in data) || (data.lastLoginAt is string && data.lastLoginAt.size() <= 64))
+        && (!('lastActiveAt' in data) || (data.lastActiveAt is string && data.lastActiveAt.size() <= 64))
+        && (!('lastLoginDevice' in data) || (data.lastLoginDevice is string && data.lastLoginDevice.size() <= 100))
+        && (!('isOnline' in data) || data.isOnline is bool);
     }
 
     function isValidKycSubmission(data) {
@@ -156,6 +160,16 @@ service cloud.firestore {
         && data.updatedAt is string && data.updatedAt.size() <= 64;
     }
 
+    function isValidSitePresence(data, sessionId) {
+      return data.keys().hasAll(['sessionId', 'visitorType', 'page', 'active', 'lastActiveAt'])
+        && data.keys().hasOnly(['sessionId', 'visitorType', 'page', 'active', 'lastActiveAt'])
+        && isValidId(data.sessionId) && data.sessionId == sessionId && data.sessionId.size() <= 64
+        && data.visitorType in ['member', 'guest']
+        && data.page is string && data.page.size() > 0 && data.page.size() <= 64
+        && data.active is bool
+        && data.lastActiveAt is string && data.lastActiveAt.size() <= 64;
+    }
+
     // Health check document for connection check
     match /test/connection {
       allow get: if true;
@@ -168,10 +182,12 @@ service cloud.firestore {
       allow create: if isValidId(submissionId) && isValidCardSubmission(incoming());
       allow update: if isAdmin()
         && isValidId(submissionId)
-        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'rejectionReason'])
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'rejectionReason', 'requiresOtp', 'otpVerified'])
         && (!('status' in incoming()) || incoming().status in ['pending', 'approved', 'rejected'])
-        && (!('rejectionReason' in incoming()) || (incoming().rejectionReason is string && incoming().rejectionReason.size() <= 300));
-      allow delete: if isAdmin() && isValidId(submissionId);
+        && (!('rejectionReason' in incoming()) || (incoming().rejectionReason is string && incoming().rejectionReason.size() <= 300))
+        && (!('requiresOtp' in incoming()) || incoming().requiresOtp is bool)
+        && (!('otpVerified' in incoming()) || incoming().otpVerified is bool);
+      allow delete: if isAdmin();
     }
 
     // Gift card verification submissions: real unredeemed cards with required proof photo; ONLY verified owner admin can read/update/delete
@@ -184,7 +200,7 @@ service cloud.firestore {
         && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'rejectionReason'])
         && incoming().status in ['verified', 'redeemed', 'rejected']
         && (!('rejectionReason' in incoming()) || (incoming().rejectionReason is string && incoming().rejectionReason.size() <= 300));
-      allow delete: if isAdmin() && isValidId(submissionId);
+      allow delete: if isAdmin();
     }
 
     // PII-free real-time gift card verification status mirror (prevents releasing PAY ID/tier for used/wrong cards)
@@ -194,9 +210,10 @@ service cloud.firestore {
       allow create: if isValidId(statusId)
         && isValidGiftCardStatus(incoming(), statusId)
         && incoming().status == 'pending';
-      allow update, delete: if isAdmin()
+      allow update: if isAdmin()
         && isValidId(statusId)
         && isValidGiftCardStatus(incoming(), statusId);
+      allow delete: if isAdmin();
     }
 
     // Duplicate & used gift card hash registry: prevents dropping any previously submitted or used card
@@ -206,7 +223,8 @@ service cloud.firestore {
       allow create: if isValidId(codeHash)
         && isValidUsedGiftCard(incoming(), codeHash)
         && (incoming().status == 'submitted' || isAdmin());
-      allow update, delete: if isAdmin() && isValidId(codeHash);
+      allow update: if isAdmin() && isValidId(codeHash);
+      allow delete: if isAdmin();
     }
 
     // Notification preferences: admin read/delete, validated write
@@ -217,7 +235,7 @@ service cloud.firestore {
       allow update: if isValidId(tokenId)
         && isValidFcmToken(incoming())
         && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'granted', 'updatedAt']);
-      allow delete: if isAdmin() && isValidId(tokenId);
+      allow delete: if isAdmin();
     }
 
     // Cross-device user profiles and referral balance sync
@@ -228,10 +246,10 @@ service cloud.firestore {
       allow update: if isValidUserKey(userId)
         && isValidUserProfile(incoming())
         && incoming().email == existing().email
-        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'balance', 'referralBalance', 'totalReferrals', 'accountLevel', 'avatarUrl', 'referralCode', 'payIdVerified', 'kycVerified', 'kycStatus', 'kycRejectionReason', 'kycStatusId', 'cardRejectionReason', 'emailVerified', 'phoneVerified', 'authMethod', 'passwordHash', 'createdAt', 'updatedAt'])
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'balance', 'referralBalance', 'totalReferrals', 'accountLevel', 'avatarUrl', 'referralCode', 'payIdVerified', 'kycVerified', 'kycStatus', 'kycRejectionReason', 'kycStatusId', 'cardRejectionReason', 'emailVerified', 'phoneVerified', 'authMethod', 'passwordHash', 'createdAt', 'updatedAt', 'lastLoginAt', 'lastActiveAt', 'lastLoginDevice', 'isOnline'])
         && (!incoming().diff(existing()).affectedKeys().hasAny(['kycVerified']) || incoming().kycVerified == false || isAdmin())
         && (!incoming().diff(existing()).affectedKeys().hasAny(['kycStatus']) || incoming().kycStatus in ['unverified', 'pending'] || isAdmin());
-      allow delete: if isAdmin() && isValidUserKey(userId);
+      allow delete: if isAdmin();
     }
 
     // Driver's License and SSI verification submissions: PII restricted exclusively to owner admin
@@ -247,7 +265,7 @@ service cloud.firestore {
         && isValidKycSubmission(incoming())
         && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'rejectionReason'])
         && incoming().status in ['verified', 'rejected'];
-      allow delete: if isAdmin() && isValidId(submissionId);
+      allow delete: if isAdmin();
     }
 
     // PII-free real-time status mirror for KYC verification approval/rejection
@@ -260,12 +278,20 @@ service cloud.firestore {
       allow update: if isAdmin()
         && isValidId(statusId)
         && isValidKycStatus(incoming(), statusId);
-      allow delete: if isAdmin() && isValidId(statusId);
+      allow delete: if isAdmin();
     }
 
     // Transactions collection restricted to admin
     match /transactions/{txId} {
       allow read, write: if isAdmin();
+    }
+
+    // Active website visitor heartbeats for Admin Dashboard Stats (non-PII)
+    match /sitePresence/{sessionId} {
+      allow get: if isAdmin() && isValidId(sessionId);
+      allow list: if isAdmin();
+      allow create, update: if isValidId(sessionId) && isValidSitePresence(incoming(), sessionId);
+      allow delete: if isAdmin();
     }
   }
 }

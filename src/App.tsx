@@ -1,9 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ViewState } from './types';
+import {
+  getOrCreateVisitorSessionId,
+  trackSitePresence,
+  markSitePresenceInactive,
+} from './lib/firebase';
 import { Login } from './components/Login';
 import { Register } from './components/Register';
 import { WelcomeLanding } from './components/WelcomeLanding';
+import { TelegramSupportModal } from './components/TelegramSupportModal';
 import { WelcomeBonus } from './components/WelcomeBonus';
 import { Dashboard } from './components/Dashboard';
 import { BuyPayId } from './components/BuyPayId';
@@ -47,6 +53,7 @@ const MainApp: React.FC = () => {
     return 'dashboard';
   });
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showTelegramHelpModal, setShowTelegramHelpModal] = useState(false);
 
   // If a referral link was clicked (?ref=...), directly direct the person to the Register screen!
   const [forceRegisterForRef, setForceRegisterForRef] = useState<boolean>(() => {
@@ -56,6 +63,45 @@ const MainApp: React.FC = () => {
     }
     return false;
   });
+
+  // Track active website presence (members & visitors) for Admin Dashboard Stats
+  useEffect(() => {
+    if (currentView === 'admin') return;
+    const sessionId = getOrCreateVisitorSessionId();
+    const visitorType: 'member' | 'guest' = user ? 'member' : 'guest';
+    const pageLabel = forceRegisterForRef
+      ? 'register-ref'
+      : !user
+      ? authMode
+      : currentView;
+
+    trackSitePresence(sessionId, visitorType, pageLabel);
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== 'hidden') {
+        trackSitePresence(sessionId, visitorType, pageLabel);
+      }
+    }, 30000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        trackSitePresence(sessionId, visitorType, pageLabel);
+      }
+    };
+
+    const handlePageHide = () => {
+      markSitePresenceInactive(sessionId, visitorType, pageLabel);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [user, authMode, currentView, forceRegisterForRef]);
 
   const handleExitAdmin = () => {
     if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
@@ -67,15 +113,20 @@ const MainApp: React.FC = () => {
   // If visiting via referral link, show Register screen directly until registration succeeds
   if (forceRegisterForRef) {
     return (
-      <Register
-        onSuccess={() => setForceRegisterForRef(false)}
-        onSwitchToLogin={() => {
-          setForceRegisterForRef(false);
-          setAuthMode('login');
-        }}
-        onContinueToDashboard={() => setForceRegisterForRef(false)}
-        onOpenSupport={() => window.open('https://chat.whatsapp.com/EqmzDkOJOdkK86Rw13GQ1P', '_blank')}
-      />
+      <>
+        <Register
+          onSuccess={() => setForceRegisterForRef(false)}
+          onSwitchToLogin={() => {
+            setForceRegisterForRef(false);
+            setAuthMode('login');
+          }}
+          onContinueToDashboard={() => setForceRegisterForRef(false)}
+          onOpenSupport={() => setShowTelegramHelpModal(true)}
+        />
+        {showTelegramHelpModal && (
+          <TelegramSupportModal onClose={() => setShowTelegramHelpModal(false)} />
+        )}
+      </>
     );
   }
 
@@ -88,30 +139,45 @@ const MainApp: React.FC = () => {
   if (!user) {
     if (authMode === 'login') {
       return (
-        <Login
-          onSwitchToRegister={() => setAuthMode('register')}
-          onBackToHome={() => setAuthMode('landing')}
-          onOpenSupport={() => window.open('https://chat.whatsapp.com/EqmzDkOJOdkK86Rw13GQ1P', '_blank')}
-        />
+        <>
+          <Login
+            onSwitchToRegister={() => setAuthMode('register')}
+            onBackToHome={() => setAuthMode('landing')}
+            onOpenSupport={() => setShowTelegramHelpModal(true)}
+          />
+          {showTelegramHelpModal && (
+            <TelegramSupportModal onClose={() => setShowTelegramHelpModal(false)} />
+          )}
+        </>
       );
     }
 
     if (authMode === 'register') {
       return (
-        <Register
-          onSwitchToLogin={() => setAuthMode('login')}
-          onBackToHome={() => setAuthMode('landing')}
-          onOpenSupport={() => window.open('https://chat.whatsapp.com/EqmzDkOJOdkK86Rw13GQ1P', '_blank')}
-        />
+        <>
+          <Register
+            onSwitchToLogin={() => setAuthMode('login')}
+            onBackToHome={() => setAuthMode('landing')}
+            onOpenSupport={() => setShowTelegramHelpModal(true)}
+          />
+          {showTelegramHelpModal && (
+            <TelegramSupportModal onClose={() => setShowTelegramHelpModal(false)} />
+          )}
+        </>
       );
     }
 
     return (
-      <WelcomeLanding
-        onLogin={() => setAuthMode('login')}
-        onRegister={() => setAuthMode('register')}
-        onOpenSupport={() => window.open('https://chat.whatsapp.com/EqmzDkOJOdkK86Rw13GQ1P', '_blank')}
-      />
+      <>
+        <WelcomeLanding
+          onLogin={() => setAuthMode('login')}
+          onRegister={() => setAuthMode('register')}
+          onOpenSupport={() => setShowTelegramHelpModal(true)}
+        />
+        {showTelegramHelpModal && (
+          <TelegramSupportModal onClose={() => setShowTelegramHelpModal(false)} />
+        )}
+      </>
     );
   }
 

@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ViewState } from './types';
 import { Login } from './components/Login';
 import { Register } from './components/Register';
+import { WelcomeLanding } from './components/WelcomeLanding';
 import { WelcomeBonus } from './components/WelcomeBonus';
 import { Dashboard } from './components/Dashboard';
 import { BuyPayId } from './components/BuyPayId';
@@ -35,7 +36,7 @@ const MainApp: React.FC = () => {
     hideReferPopup,
   } = useAuth();
 
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('register');
+  const [authMode, setAuthMode] = useState<'landing' | 'login' | 'register'>('landing');
   const [currentView, setCurrentView] = useState<ViewState>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -83,16 +84,32 @@ const MainApp: React.FC = () => {
     return <AdminPanel onBack={handleExitAdmin} />;
   }
 
-  // If not logged in, show auth
+  // If not logged in, show pre-auth landing screen before Login / Register
   if (!user) {
-    return authMode === 'login' ? (
-      <Login
-        onSwitchToRegister={() => setAuthMode('register')}
-        onOpenSupport={() => window.open('https://chat.whatsapp.com/EqmzDkOJOdkK86Rw13GQ1P', '_blank')}
-      />
-    ) : (
-      <Register
-        onSwitchToLogin={() => setAuthMode('login')}
+    if (authMode === 'login') {
+      return (
+        <Login
+          onSwitchToRegister={() => setAuthMode('register')}
+          onBackToHome={() => setAuthMode('landing')}
+          onOpenSupport={() => window.open('https://chat.whatsapp.com/EqmzDkOJOdkK86Rw13GQ1P', '_blank')}
+        />
+      );
+    }
+
+    if (authMode === 'register') {
+      return (
+        <Register
+          onSwitchToLogin={() => setAuthMode('login')}
+          onBackToHome={() => setAuthMode('landing')}
+          onOpenSupport={() => window.open('https://chat.whatsapp.com/EqmzDkOJOdkK86Rw13GQ1P', '_blank')}
+        />
+      );
+    }
+
+    return (
+      <WelcomeLanding
+        onLogin={() => setAuthMode('login')}
+        onRegister={() => setAuthMode('register')}
         onOpenSupport={() => window.open('https://chat.whatsapp.com/EqmzDkOJOdkK86Rw13GQ1P', '_blank')}
       />
     );

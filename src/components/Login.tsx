@@ -5,7 +5,7 @@ import {
   saveRememberedLogin,
   clearRememberedLogin,
 } from '../context/AuthContext';
-import { HelpCircle, Eye, EyeOff, Lock, Mail, Phone, ArrowRight } from 'lucide-react';
+import { HelpCircle, Eye, EyeOff, Lock, Mail, Phone, ArrowRight, ArrowLeft } from 'lucide-react';
 import {
   validateEmailInput,
   validatePhoneWithCountry,
@@ -15,9 +15,10 @@ import { CountryPhoneInput } from './CountryPhoneInput';
 interface LoginProps {
   onSwitchToRegister: () => void;
   onOpenSupport?: () => void;
+  onBackToHome?: () => void;
 }
 
-export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport }) => {
+export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport, onBackToHome }) => {
   const savedLogin = getRememberedLogin();
   const [loginMethod, setLoginMethod] = useState<'email' | 'phone'>(
     savedLogin?.method || 'phone'
@@ -82,7 +83,19 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onOpenSupport 
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-700 via-purple-600 to-orange-400 flex flex-col justify-between p-4 sm:p-6">
-      <div className="flex justify-end pt-2">
+      <div className="flex justify-between items-center pt-2 max-w-md mx-auto w-full">
+        {onBackToHome ? (
+          <button
+            type="button"
+            onClick={onBackToHome}
+            className="flex items-center space-x-1.5 text-white/90 hover:text-white bg-white/15 px-3.5 py-1.5 rounded-full text-sm font-medium backdrop-blur-sm transition-all cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back</span>
+          </button>
+        ) : (
+          <div />
+        )}
         <button
           onClick={
             onOpenSupport

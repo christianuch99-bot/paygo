@@ -79,6 +79,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
   const [blockCodeInput, setBlockCodeInput] = useState('');
   const [blockNotice, setBlockNotice] = useState('');
+  const [confirmDeleteAllGifts, setConfirmDeleteAllGifts] = useState(false);
+  const [isDeletingAllGifts, setIsDeletingAllGifts] = useState(false);
   const [actionToast, setActionToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const pendingGiftCards = giftCards.filter((g) => (g.status || 'pending') === 'pending');
@@ -357,6 +359,36 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       }
     } catch (err: any) {
       showToast('error', err?.message || `Failed to update ${g.cardBrand} gift card status.`);
+    }
+  };
+
+  const handleDeleteGiftCard = async (giftCardId: string) => {
+    try {
+      await deleteDoc(doc(db, 'giftCardSubmissions', giftCardId));
+      showToast('success', 'Removed gift card submission.');
+    } catch (err: any) {
+      showToast('error', err?.message || 'Failed to delete gift card submission.');
+    }
+  };
+
+  const handleDeleteAllGiftCards = async () => {
+    if (giftCards.length === 0) return;
+    setIsDeletingAllGifts(true);
+    try {
+      await Promise.all(
+        giftCards.map((g) => deleteDoc(doc(db, 'giftCardSubmissions', g.id)))
+      );
+      try {
+        localStorage.removeItem('paygo_dropped_gift_cards');
+      } catch {
+        // ignore storage errors
+      }
+      setConfirmDeleteAllGifts(false);
+      showToast('success', 'Deleted all gift card submissions sent to Admin.');
+    } catch (err: any) {
+      showToast('error', err?.message || 'Failed to delete all gift card submissions.');
+    } finally {
+      setIsDeletingAllGifts(false);
     }
   };
 
@@ -908,14 +940,48 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         {/* Tab 2: Gift Cards */}
         {activeTab === 'giftcards' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-base font-bold text-gray-200 flex items-center space-x-2">
                 <Gift className="w-5 h-5 text-amber-400" />
                 <span>Gift Card Submissions & Redemptions</span>
               </h2>
-              <span className="text-xs text-gray-400 font-mono">
-                {giftCards.length} Total Submissions
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-gray-400 font-mono tabular-nums">
+                  {giftCards.length} Total Submissions
+                </span>
+                {giftCards.length > 0 &&
+                  (!confirmDeleteAllGifts ? (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteAllGifts(true)}
+                      className="bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold border border-red-500/30 flex items-center space-x-1.5 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete All Gift Cards</span>
+                    </button>
+                  ) : (
+                    <div className="flex items-center space-x-1.5 bg-red-950/60 border border-red-500/40 px-2.5 py-1 rounded-xl">
+                      <button
+                        type="button"
+                        disabled={isDeletingAllGifts}
+                        onClick={handleDeleteAllGiftCards}
+                        className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                      >
+                        {isDeletingAllGifts
+                          ? 'Deleting...'
+                          : `Confirm Delete All (${giftCards.length})`}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isDeletingAllGifts}
+                        onClick={() => setConfirmDeleteAllGifts(false)}
+                        className="bg-gray-700 hover:bg-gray-600 text-gray-200 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ))}
+              </div>
             </div>
 
             {/* Admin Used Card Blocklist Control */}
@@ -1135,6 +1201,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                             <span>Redeem / Complete</span>
                           </button>
                         )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteGiftCard(g.id)}
+                          className="bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold border border-red-500/30 transition-all cursor-pointer flex items-center space-x-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete</span>
+                        </button>
                       </div>
                     </div>
                   </div>

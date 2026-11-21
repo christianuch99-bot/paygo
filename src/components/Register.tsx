@@ -10,6 +10,7 @@ import {
   EyeOff,
   Sparkles,
   ArrowRight,
+  ArrowLeft,
   Gift,
   LayoutDashboard,
   Tag,
@@ -25,6 +26,7 @@ interface RegisterProps {
   onSwitchToLogin: () => void;
   onOpenSupport?: () => void;
   onContinueToDashboard?: () => void;
+  onBackToHome?: () => void;
 }
 
 export const Register: React.FC<RegisterProps> = ({
@@ -32,6 +34,7 @@ export const Register: React.FC<RegisterProps> = ({
   onSwitchToLogin,
   onOpenSupport,
   onContinueToDashboard,
+  onBackToHome,
 }) => {
   const [registerMethod, setRegisterMethod] = useState<'phone' | 'email'>('phone');
   const [name, setName] = useState('');
@@ -131,6 +134,15 @@ export const Register: React.FC<RegisterProps> = ({
           >
             <LayoutDashboard className="w-4 h-4" />
             <span>Go to My Dashboard ({user.name})</span>
+          </button>
+        ) : onBackToHome ? (
+          <button
+            type="button"
+            onClick={onBackToHome}
+            className="flex items-center space-x-1.5 text-white/90 hover:text-white bg-white/15 px-3.5 py-1.5 rounded-full text-sm font-medium backdrop-blur-sm transition-all cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back</span>
           </button>
         ) : (
           <div />

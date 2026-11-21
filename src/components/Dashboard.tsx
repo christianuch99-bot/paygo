@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { PromotionsCarousel } from './PromotionsCarousel';
 import { SpendingBreakdownChart } from './SpendingBreakdownChart';
+import { RecentApprovedWithdrawals } from './RecentApprovedWithdrawals';
 
 interface DashboardProps {
   onNavigate: (view: ViewState) => void;
@@ -336,6 +337,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onRequestLogou
 
         {/* Promotions Carousel */}
         <PromotionsCarousel onNavigate={onNavigate} />
+
+        {/* Recently Approved Accounts & Withdrawals */}
+        <RecentApprovedWithdrawals variant="dashboard" />
       </div>
     </div>
   );

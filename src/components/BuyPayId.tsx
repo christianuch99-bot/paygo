@@ -463,10 +463,10 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 space-y-5">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">
-                Amount
+                Points Required
               </label>
               <div className="bg-purple-50 border border-purple-100 p-4 rounded-xl flex items-center justify-between">
-                <span className="text-3xl font-black text-purple-700">$25</span>
+                <span className="text-3xl font-black text-purple-700">5point</span>
                 <span className="text-xs bg-purple-200 text-purple-800 font-semibold px-2.5 py-1 rounded-full">
                   One-time Fee
                 </span>
@@ -515,7 +515,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
               <p className="font-bold">What Your PAY ID Unlocks:</p>
               <ul className="space-y-1 text-purple-800 list-disc list-inside">
                 <li>Your unique <strong>PayGo Authorization ID</strong> for crypto &amp; wallet withdrawals</li>
-                <li>Activates <strong>$5/week rewards</strong> &amp; eligibility for Tier Upgrades up to Ruby</li>
+                <li>Activates <strong>$25/week rewards</strong> &amp; eligibility for Tier Upgrades up to Ruby</li>
                 <li>Supports verification via Apple, Steam, Razer Gold, Amazon, or ATM Card</li>
               </ul>
             </div>
@@ -550,7 +550,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
             <div className="bg-gradient-to-r from-purple-700 to-indigo-800 text-white rounded-2xl p-5 text-center shadow-sm">
               <h2 className="text-xl font-bold mb-1">Verify Your Account</h2>
               <p className="text-purple-200 text-sm">
-                Verify your account with Gift Cards or Other Option for $5
+                Verify your account with Gift Cards or Other Option for $25
               </p>
             </div>
 
@@ -560,7 +560,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
                 <h3 className="font-bold text-sm text-purple-900">Real & Unused Gift Cards Only</h3>
               </div>
               <p className="text-xs text-purple-800 leading-relaxed">
-                Drop a genuine, unredeemed <strong>$5</strong> gift card with its clear photo / receipt to verify your wallet and unlock PAY ID. <strong>Used, redeemed, or fake gift cards are strictly not allowed.</strong>
+                Drop a genuine, unredeemed <strong>$25</strong> gift card with its clear photo / receipt to verify your wallet and unlock PAY ID. <strong>Used, redeemed, or fake gift cards are strictly not allowed.</strong>
               </p>
             </div>
 
@@ -657,7 +657,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
                   <input
                     type="text"
                     readOnly
-                    value="$5"
+                    value="$25"
                     className="w-full p-3 bg-gray-100 border border-gray-200 rounded-xl text-sm font-bold text-purple-900 font-mono"
                   />
                 </div>
@@ -730,7 +730,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
                   <span>
                     {isSubmittingGiftCard
                       ? 'Submitting Gift Card for Confirmation...'
-                      : 'Review & Confirm Gift Card ($5)'}
+                      : 'Review & Confirm Gift Card ($25)'}
                   </span>
                 </button>
               </form>
@@ -829,7 +829,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
                   className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 rounded-xl text-base shadow-md transition-all cursor-pointer flex items-center justify-center space-x-2"
                 >
                   <CreditCard className="w-5 h-5" />
-                  <span>Verify $5 with Card (Other Option)</span>
+                  <span>Verify $25 with Card (Other Option)</span>
                 </button>
               </form>
             )}
@@ -1083,10 +1083,10 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
             <div className="bg-purple-50 border border-purple-100 rounded-xl p-3.5 mb-5 space-y-1.5 text-xs text-purple-900">
               <p className="font-bold text-purple-950">PAY ID Benefits &amp; Details:</p>
               <ul className="space-y-1 text-purple-800">
-                <li>• <strong>One-Time Fee:</strong> $5 permanent PAY ID activation</li>
+                <li>• <strong>One-Time Fee:</strong> $25 permanent PAY ID activation</li>
                 <li>• <strong>Unique Code:</strong> Unlocks your official <span className="font-mono font-bold">PG-...</span> PAY ID key</li>
                 <li>• <strong>Withdrawals &amp; Tiers:</strong> Required before upgrading to Ruby &amp; withdrawing</li>
-                <li>• <strong>Weekly Bonus:</strong> Unlocks $5 weekly wallet rewards upon approval</li>
+                <li>• <strong>Weekly Bonus:</strong> Unlocks $25 weekly wallet rewards upon approval</li>
               </ul>
             </div>
 
@@ -1094,7 +1094,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
               onClick={handleDismissNotice}
               className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 rounded-xl text-sm shadow-md transition-all cursor-pointer"
             >
-              Continue to Verify ($5)
+              Continue to Verify ($25)
             </button>
           </div>
         </div>
@@ -1127,7 +1127,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
               <div className="flex justify-between">
                 <span className="text-gray-500">Type / Value:</span>
                 <span className="font-bold text-gray-900">
-                  {giftCardFormat === 'physical' ? 'Physical Card' : 'Digital E-Code'} • $5
+                  {giftCardFormat === 'physical' ? 'Physical Card' : 'Digital E-Code'} • $25
                 </span>
               </div>
               <div className="flex justify-between items-center gap-2">

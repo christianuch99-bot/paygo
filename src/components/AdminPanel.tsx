@@ -20,13 +20,12 @@ import {
   UserCheck,
   Laptop,
   Clock,
-  Send,
 } from 'lucide-react';
 
 import { collection, onSnapshot, query, doc, updateDoc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
 import { onAuthStateChanged, signInWithPopup, signOut, User as FirebaseUser } from 'firebase/auth';
 import { db, auth, googleProvider, handleFirestoreError, OperationType, blockUsedGiftCardCode } from '../lib/firebase';
-import { notifyTelegramAdminVerdict, sendTestTelegramAlert } from '../lib/telegram';
+import { notifyTelegramAdminVerdict } from '../lib/telegram';
 import { GiftCardSubmission, KycSubmission } from '../types';
 import { hashGiftCardCode } from '../utils/giftCardValidator';
 
@@ -145,7 +144,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [isDeletingAllGifts, setIsDeletingAllGifts] = useState(false);
   const [confirmDeleteAllCards, setConfirmDeleteAllCards] = useState(false);
   const [isDeletingAllCards, setIsDeletingAllCards] = useState(false);
-  const [isTestingTelegram, setIsTestingTelegram] = useState(false);
   const [actionToast, setActionToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const pendingGiftCards = giftCards.filter((g) => (g.status || 'pending') === 'pending');
@@ -395,22 +393,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     setIsPinUnlocked(false);
     setPin('');
     await signOut(auth).catch(() => {});
-  };
-
-  const handleSendTestTelegram = async () => {
-    setIsTestingTelegram(true);
-    try {
-      const result = await sendTestTelegramAlert();
-      if (result.ok) {
-        showToast('success', result.message || 'Test Telegram notification sent! Check your Telegram Bot chat.');
-      } else {
-        showToast('error', result.error || 'Failed to send Test Telegram alert.');
-      }
-    } catch (err: any) {
-      showToast('error', err?.message || 'Unable to send Test Telegram alert.');
-    } finally {
-      setIsTestingTelegram(false);
-    }
   };
 
   const copyText = (text: string, id: string) => {
@@ -881,17 +863,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                 <span>Clients ({clients.length})</span>
               </button>
             </div>
-
-            <button
-              type="button"
-              onClick={handleSendTestTelegram}
-              disabled={isTestingTelegram}
-              title="Send a test alert to Admin Telegram Bot"
-              className="bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 px-3 py-2 rounded-xl text-xs font-semibold border border-sky-400/30 flex items-center space-x-1.5 cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-60"
-            >
-              <Send className="w-3.5 h-3.5" />
-              <span>{isTestingTelegram ? 'Sending...' : 'Send Test Telegram'}</span>
-            </button>
 
             <button
               onClick={handleAdminSignOut}

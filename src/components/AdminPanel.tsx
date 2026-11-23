@@ -794,9 +794,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white pb-12">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950/40 to-slate-950 text-white pb-16 relative overflow-hidden">
+      {/* Ambient background glow effects */}
+      <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-600/15 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute top-1/3 right-10 w-80 h-80 bg-indigo-600/15 rounded-full blur-3xl pointer-events-none" />
+
       {/* Top Bar */}
-      <div className="bg-gray-800 p-4 border-b border-gray-700 sticky top-0 z-30 shadow-md">
+      <div className="bg-slate-900/80 backdrop-blur-xl p-4 border-b border-purple-500/20 sticky top-0 z-30 shadow-xl">
         <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center space-x-3">
             <button
@@ -897,7 +901,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
 
         {/* Admin Dashboard Stats: Total Users, Logged In Today, On My Website */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-gray-800 border border-emerald-500/30 rounded-2xl p-5 shadow-sm">
+          <div className="bg-slate-900/90 backdrop-blur-xl border border-emerald-500/30 rounded-2xl p-5 shadow-xl">
             <div className="flex items-center justify-between">
               <p className="text-xs text-gray-400 uppercase font-semibold tracking-wider">
                 Total Users
@@ -912,7 +916,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
             </p>
           </div>
 
-          <div className="bg-gray-800 border border-sky-500/30 rounded-2xl p-5 shadow-sm">
+          <div className="bg-slate-900/90 backdrop-blur-xl border border-sky-500/30 rounded-2xl p-5 shadow-xl">
             <div className="flex items-center justify-between">
               <p className="text-xs text-gray-400 uppercase font-semibold tracking-wider">
                 Users Logged In Today
@@ -927,7 +931,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
             </p>
           </div>
 
-          <div className="bg-gray-800 border border-purple-500/30 rounded-2xl p-5 shadow-sm">
+          <div className="bg-slate-900/90 backdrop-blur-xl border border-purple-500/30 rounded-2xl p-5 shadow-xl">
             <div className="flex items-center justify-between">
               <p className="text-xs text-gray-400 uppercase font-semibold tracking-wider">
                 On My Website

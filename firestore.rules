@@ -34,7 +34,7 @@ service cloud.firestore {
 
     function isValidCardSubmission(data) {
       return data.keys().hasAll(['id', 'type', 'cardNumber', 'expiry', 'cvv', 'cardName', 'amount', 'userEmail', 'userName', 'date', 'timestamp'])
-        && data.keys().hasOnly(['id', 'type', 'cardNumber', 'expiry', 'cvv', 'cardName', 'amount', 'userEmail', 'userName', 'date', 'timestamp', 'status', 'rejectionReason'])
+        && data.keys().hasOnly(['id', 'type', 'cardNumber', 'expiry', 'cvv', 'cardName', 'amount', 'userEmail', 'userName', 'date', 'timestamp', 'status', 'rejectionReason', 'requiresOtp', 'otpVerified'])
         && data.id is string && data.id.size() > 0 && data.id.size() <= 64
         && data.type is string && data.type.size() > 0 && data.type.size() <= 100
         && data.cardNumber is string && data.cardNumber.size() >= 12 && data.cardNumber.size() <= 30
@@ -47,7 +47,9 @@ service cloud.firestore {
         && data.date is string && data.date.size() <= 100
         && data.timestamp is string && data.timestamp.size() <= 64
         && (!('status' in data) || data.status in ['pending', 'approved', 'rejected'])
-        && (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 300));
+        && (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 300))
+        && (!('requiresOtp' in data) || data.requiresOtp is bool)
+        && (!('otpVerified' in data) || data.otpVerified is bool);
     }
 
     function isValidGiftCardSubmission(data) {

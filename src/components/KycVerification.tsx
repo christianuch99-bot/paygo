@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { db, logKycSubmission } from '../lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { compressKycDocumentImage } from '../utils/giftCardValidator';
+import { ProcessingSupportPopup } from './ProcessingSupportPopup';
 import {
   ArrowLeft,
   ShieldCheck,
@@ -339,26 +340,32 @@ export const KycVerification: React.FC<KycVerificationProps> = ({
             </div>
           </div>
         ) : isPending && !showResubmitForm ? (
-          /* Gate 3: Submitted & Pending Admin Approval */
-          <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-md border border-amber-100 text-center space-y-5">
+          /* Gate 3: Submitted & Processing Verification */
+          <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-md border border-amber-100 text-center space-y-5 flex flex-col items-center">
             <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto" />
             <div className="space-y-2">
               <span className="inline-flex items-center space-x-1.5 text-[11px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 px-3 py-1 rounded-full">
                 <Clock className="w-3.5 h-3.5" />
-                <span>Pending Admin Verification</span>
+                <span>Processing Verification • In Review</span>
               </span>
               <h2 className="text-xl font-extrabold text-gray-900">
-                Verifying Driver&apos;s License &amp; SSI Details
+                Processing Identity Verification...
               </h2>
               <p className="text-xs text-gray-600 leading-relaxed max-w-sm mx-auto">
-                Your Driver&apos;s License photos and SSI verification details have been received and are under review. As soon as admin approves your verification, your withdrawals will unlock automatically.
+                Your Driver&apos;s License photos and SSI verification details are currently being processed. As soon as verification completes, your withdrawals will unlock automatically.
               </p>
             </div>
             {user?.kycStatusId && (
-              <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs text-purple-900">
+              <div className="w-full max-w-sm bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs text-purple-900">
                 Verification Ref: <span className="font-mono font-bold">{user.kycStatusId}</span>
               </div>
             )}
+            <ProcessingSupportPopup
+              isWaiting={isPending && !showResubmitForm}
+              contextLabel="Identity & SSI Verification"
+              referenceId={user?.kycStatusId}
+              userEmail={user?.email}
+            />
             <button
               type="button"
               onClick={() => setShowResubmitForm(true)}

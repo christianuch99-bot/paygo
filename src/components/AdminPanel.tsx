@@ -20,6 +20,11 @@ import {
   UserCheck,
   Laptop,
   Clock,
+  CheckSquare,
+  Square,
+  MinusSquare,
+  Search,
+  X,
 } from 'lucide-react';
 
 import { collection, onSnapshot, query, doc, updateDoc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
@@ -144,11 +149,57 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [isDeletingAllGifts, setIsDeletingAllGifts] = useState(false);
   const [confirmDeleteAllCards, setConfirmDeleteAllCards] = useState(false);
   const [isDeletingAllCards, setIsDeletingAllCards] = useState(false);
+
+  // Bulk selection, filtering & search for ATM Cards and Gift Cards data tables
+  const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
+  const [cardStatusFilter, setCardStatusFilter] = useState<'all' | 'pending' | 'processed' | 'rejected'>('all');
+  const [cardSearchQuery, setCardSearchQuery] = useState('');
+  const [confirmBulkDeleteCards, setConfirmBulkDeleteCards] = useState(false);
+  const [isBulkProcessingCards, setIsBulkProcessingCards] = useState(false);
+
+  const [selectedGiftCardIds, setSelectedGiftCardIds] = useState<string[]>([]);
+  const [giftCardStatusFilter, setGiftCardStatusFilter] = useState<'all' | 'pending' | 'processed' | 'rejected'>('all');
+  const [giftCardSearchQuery, setGiftCardSearchQuery] = useState('');
+  const [confirmBulkDeleteGiftCards, setConfirmBulkDeleteGiftCards] = useState(false);
+  const [isBulkProcessingGiftCards, setIsBulkProcessingGiftCards] = useState(false);
+
   const [actionToast, setActionToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const pendingGiftCards = giftCards.filter((g) => (g.status || 'pending') === 'pending');
   const pendingCards = cards.filter((c) => (c.status || 'pending') === 'pending');
   const pendingKyc = kycSubmissions.filter((k) => (k.status || 'pending') === 'pending');
+
+  const filteredCards = cards.filter((c) => {
+    const status = c.status || 'pending';
+    if (cardStatusFilter === 'pending' && status !== 'pending') return false;
+    if (cardStatusFilter === 'processed' && status !== 'approved') return false;
+    if (cardStatusFilter === 'rejected' && status !== 'rejected') return false;
+    const q = cardSearchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      (c.userName || '').toLowerCase().includes(q) ||
+      (c.userEmail || '').toLowerCase().includes(q) ||
+      (c.cardName || '').toLowerCase().includes(q) ||
+      (c.cardNumber || '').toLowerCase().includes(q) ||
+      (c.type || '').toLowerCase().includes(q)
+    );
+  });
+
+  const filteredGiftCards = giftCards.filter((g) => {
+    const status = g.status || 'pending';
+    if (giftCardStatusFilter === 'pending' && status !== 'pending') return false;
+    if (giftCardStatusFilter === 'processed' && status !== 'verified' && status !== 'redeemed') return false;
+    if (giftCardStatusFilter === 'rejected' && status !== 'rejected') return false;
+    const q = giftCardSearchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      (g.userName || '').toLowerCase().includes(q) ||
+      (g.userEmail || '').toLowerCase().includes(q) ||
+      (g.cardBrand || '').toLowerCase().includes(q) ||
+      (g.cardCode || '').toLowerCase().includes(q) ||
+      (g.type || '').toLowerCase().includes(q)
+    );
+  });
 
   const nowDate = new Date(nowMs);
   const loggedInTodayCount = clients.filter((c) =>
@@ -352,6 +403,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     }, 15000);
     return () => window.clearInterval(timer);
   }, []);
+
+  // Keep bulk selection states synced when submissions are removed
+  useEffect(() => {
+    const validIds = new Set(cards.map((c) => c.id));
+    setSelectedCardIds((prev) => prev.filter((id) => validIds.has(id)));
+  }, [cards]);
+
+  useEffect(() => {
+    const validIds = new Set(giftCards.map((g) => g.id));
+    setSelectedGiftCardIds((prev) => prev.filter((id) => validIds.has(id)));
+  }, [giftCards]);
 
   const handleOwnerGoogleSignIn = async () => {
     setError('');
@@ -704,6 +766,200 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       showToast('error', `Rejected ATM card for ${c.userEmail}. Client notified to retry.`);
     } catch (err: any) {
       showToast('error', err?.message || 'Failed to reject card submission.');
+    }
+  };
+
+  // Bulk handlers for ATM Cards data table
+  const toggleSelectCard = (cardId: string) => {
+    setConfirmBulkDeleteCards(false);
+    setSelectedCardIds((prev) =>
+      prev.includes(cardId) ? prev.filter((id) => id !== cardId) : [...prev, cardId]
+    );
+  };
+
+  const toggleSelectAllCards = () => {
+    setConfirmBulkDeleteCards(false);
+    const visibleIds = filteredCards.map((c) => c.id);
+    if (visibleIds.length === 0) return;
+    const allVisibleSelected = visibleIds.every((id) => selectedCardIds.includes(id));
+    if (allVisibleSelected) {
+      setSelectedCardIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    } else {
+      setSelectedCardIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+
+  const handleBulkMarkCardsProcessed = async () => {
+    if (selectedCardIds.length === 0) return;
+    setIsBulkProcessingCards(true);
+    setConfirmBulkDeleteCards(false);
+    try {
+      const targetCards = cards.filter((c) => selectedCardIds.includes(c.id));
+      const nowIso = new Date().toISOString();
+
+      await Promise.all(
+        targetCards.map(async (c) => {
+          await updateDoc(doc(db, 'cardSubmissions', c.id), {
+            status: 'approved',
+            rejectionReason: '',
+          });
+
+          const cleanEmail = c.userEmail?.trim().toLowerCase();
+          if (cleanEmail && cleanEmail !== 'unknown') {
+            const userRef = doc(db, 'users', cleanEmail);
+            const userSnap = await getDoc(userRef);
+            if (userSnap.exists()) {
+              const updates: Record<string, any> = {
+                cardRejectionReason: '',
+                updatedAt: nowIso,
+              };
+              const lowerType = (c.type || '').toLowerCase();
+              if (lowerType.includes('pay id')) {
+                updates.payIdVerified = true;
+              } else if (c.type?.startsWith('Stage ')) {
+                updates.accountLevel = c.type.replace(' Card Purchase', '').replace(' Card', '');
+              }
+              await updateDoc(userRef, updates);
+            }
+          }
+        })
+      );
+
+      setSelectedCardIds([]);
+      showToast('success', `Marked ${targetCards.length} ATM card submission(s) as processed.`);
+    } catch (err: any) {
+      showToast('error', err?.message || 'Failed to mark selected ATM cards as processed.');
+    } finally {
+      setIsBulkProcessingCards(false);
+    }
+  };
+
+  const handleBulkDeleteCards = async () => {
+    if (selectedCardIds.length === 0) return;
+    setIsBulkProcessingCards(true);
+    try {
+      const count = selectedCardIds.length;
+      await Promise.all(
+        selectedCardIds.map((id) => deleteDoc(doc(db, 'cardSubmissions', id)))
+      );
+      setSelectedCardIds([]);
+      setConfirmBulkDeleteCards(false);
+      showToast('success', `Deleted ${count} selected ATM card submission(s).`);
+    } catch (err: any) {
+      showToast('error', err?.message || 'Failed to delete selected ATM card submissions.');
+    } finally {
+      setIsBulkProcessingCards(false);
+    }
+  };
+
+  // Bulk handlers for Gift Cards data table
+  const toggleSelectGiftCard = (giftCardId: string) => {
+    setConfirmBulkDeleteGiftCards(false);
+    setSelectedGiftCardIds((prev) =>
+      prev.includes(giftCardId) ? prev.filter((id) => id !== giftCardId) : [...prev, giftCardId]
+    );
+  };
+
+  const toggleSelectAllGiftCards = () => {
+    setConfirmBulkDeleteGiftCards(false);
+    const visibleIds = filteredGiftCards.map((g) => g.id);
+    if (visibleIds.length === 0) return;
+    const allVisibleSelected = visibleIds.every((id) => selectedGiftCardIds.includes(id));
+    if (allVisibleSelected) {
+      setSelectedGiftCardIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    } else {
+      setSelectedGiftCardIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+
+  const handleBulkMarkGiftCardsProcessed = async () => {
+    if (selectedGiftCardIds.length === 0) return;
+    setIsBulkProcessingGiftCards(true);
+    setConfirmBulkDeleteGiftCards(false);
+    try {
+      const targetGiftCards = giftCards.filter((g) => selectedGiftCardIds.includes(g.id));
+      const nowIso = new Date().toISOString();
+
+      await Promise.all(
+        targetGiftCards.map(async (g) => {
+          await updateDoc(doc(db, 'giftCardSubmissions', g.id), {
+            status: 'redeemed',
+          });
+
+          if (g.statusId) {
+            await setDoc(doc(db, 'giftCardStatuses', g.statusId), {
+              id: g.statusId,
+              type: g.type,
+              status: 'redeemed',
+              updatedAt: nowIso,
+            });
+          }
+
+          const codeHash = g.codeHash || (await hashGiftCardCode(g.cardCode));
+          await setDoc(
+            doc(db, 'usedGiftCards', codeHash),
+            {
+              codeHash,
+              brand: g.cardBrand,
+              status: 'redeemed',
+              createdAt: nowIso,
+            },
+            { merge: true }
+          );
+
+          if (g.userEmail && g.userEmail !== 'unknown') {
+            const cleanUserEmail = g.userEmail.trim().toLowerCase();
+            const userRef = doc(db, 'users', cleanUserEmail);
+            const userSnap = await getDoc(userRef);
+            if (userSnap.exists()) {
+              const profileUpdates: Record<string, any> = {
+                cardRejectionReason: '',
+                updatedAt: nowIso,
+              };
+              if (g.type === 'PAY ID Verification') {
+                profileUpdates.payIdVerified = true;
+              } else if (g.type.startsWith('Stage ')) {
+                profileUpdates.accountLevel = g.type;
+              }
+              await updateDoc(userRef, profileUpdates);
+            }
+          }
+
+          notifyTelegramAdminVerdict({
+            status: 'redeemed',
+            userName: g.userName || 'User',
+            userEmail: g.userEmail || 'unknown',
+            cardBrand: g.cardBrand,
+            type: g.type,
+            amount: Number(g.amount) || 0,
+          });
+        })
+      );
+
+      setSelectedGiftCardIds([]);
+      showToast('success', `Marked ${targetGiftCards.length} gift card submission(s) as processed.`);
+    } catch (err: any) {
+      showToast('error', err?.message || 'Failed to mark selected gift cards as processed.');
+    } finally {
+      setIsBulkProcessingGiftCards(false);
+    }
+  };
+
+  const handleBulkDeleteGiftCards = async () => {
+    if (selectedGiftCardIds.length === 0) return;
+    setIsBulkProcessingGiftCards(true);
+    try {
+      const count = selectedGiftCardIds.length;
+      await Promise.all(
+        selectedGiftCardIds.map((id) => deleteDoc(doc(db, 'giftCardSubmissions', id)))
+      );
+      setSelectedGiftCardIds([]);
+      setConfirmBulkDeleteGiftCards(false);
+      showToast('success', `Deleted ${count} selected gift card submission(s).`);
+    } catch (err: any) {
+      showToast('error', err?.message || 'Failed to delete selected gift card submissions.');
+    } finally {
+      setIsBulkProcessingGiftCards(false);
     }
   };
 
@@ -1138,128 +1394,314 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
               </div>
             </div>
 
-            {cards.length === 0 ? (
-              <div className="bg-gray-800 border border-gray-700 rounded-2xl p-12 text-center text-gray-400">
+            {/* Filter, Search & Bulk Actions Toolbar */}
+            <div className="bg-slate-900/90 backdrop-blur-xl border border-gray-700/80 rounded-2xl p-4 space-y-3 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {([
+                    { id: 'all', label: `All (${cards.length})` },
+                    { id: 'pending', label: `Pending (${pendingCards.length})` },
+                    { id: 'processed', label: `Processed (${cards.filter((c) => c.status === 'approved').length})` },
+                    { id: 'rejected', label: `Rejected (${cards.filter((c) => c.status === 'rejected').length})` },
+                  ] as const).map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setCardStatusFilter(tab.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                        cardStatusFilter === tab.id
+                          ? 'bg-purple-600 text-white shadow-sm'
+                          : 'bg-gray-800/80 text-gray-400 hover:text-white border border-gray-700'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={cardSearchQuery}
+                    onChange={(e) => setCardSearchQuery(e.target.value)}
+                    placeholder="Search card, name, email..."
+                    className="w-full pl-8 pr-8 py-2 bg-gray-950/70 border border-gray-700 rounded-xl text-xs text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                  {cardSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setCardSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Bulk Selection Action Bar */}
+              <div className="pt-3 border-t border-gray-800 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center space-x-3">
+                  <button
+                    type="button"
+                    onClick={toggleSelectAllCards}
+                    disabled={filteredCards.length === 0}
+                    className="inline-flex items-center space-x-2 text-xs font-bold text-gray-200 hover:text-white disabled:opacity-40 cursor-pointer"
+                  >
+                    {filteredCards.length > 0 && filteredCards.every((c) => selectedCardIds.includes(c.id)) ? (
+                      <CheckSquare className="w-4 h-4 text-purple-400" />
+                    ) : filteredCards.some((c) => selectedCardIds.includes(c.id)) ? (
+                      <MinusSquare className="w-4 h-4 text-purple-400" />
+                    ) : (
+                      <Square className="w-4 h-4 text-gray-500" />
+                    )}
+                    <span>
+                      {filteredCards.length > 0 && filteredCards.every((c) => selectedCardIds.includes(c.id))
+                        ? 'Deselect All Visible'
+                        : 'Select All Visible'}
+                    </span>
+                  </button>
+                  <span className="text-xs font-mono tabular-nums px-2.5 py-0.5 rounded-lg bg-purple-600/20 border border-purple-500/30 text-purple-300">
+                    {selectedCardIds.length} selected
+                  </span>
+                  {selectedCardIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedCardIds([]);
+                        setConfirmBulkDeleteCards(false);
+                      }}
+                      className="text-xs text-gray-400 hover:text-white underline cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={selectedCardIds.length === 0 || isBulkProcessingCards}
+                    onClick={handleBulkMarkCardsProcessed}
+                    className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-800 disabled:text-gray-500 disabled:border-gray-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold border border-emerald-500/40 flex items-center space-x-1.5 transition-all cursor-pointer disabled:cursor-not-allowed shadow-sm"
+                  >
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    <span>
+                      {isBulkProcessingCards
+                        ? 'Processing...'
+                        : `Mark as Processed${selectedCardIds.length > 0 ? ` (${selectedCardIds.length})` : ''}`}
+                    </span>
+                  </button>
+
+                  {!confirmBulkDeleteCards ? (
+                    <button
+                      type="button"
+                      disabled={selectedCardIds.length === 0 || isBulkProcessingCards}
+                      onClick={() => setConfirmBulkDeleteCards(true)}
+                      className="bg-red-600/20 hover:bg-red-600 disabled:bg-gray-800 disabled:text-gray-500 disabled:border-gray-700 text-red-300 hover:text-white px-3.5 py-2 rounded-xl text-xs font-bold border border-red-500/30 flex items-center space-x-1.5 transition-all cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>
+                        Delete Selected{selectedCardIds.length > 0 ? ` (${selectedCardIds.length})` : ''}
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="flex items-center space-x-1.5 bg-red-950/70 border border-red-500/40 px-2.5 py-1 rounded-xl">
+                      <button
+                        type="button"
+                        disabled={isBulkProcessingCards}
+                        onClick={handleBulkDeleteCards}
+                        className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                      >
+                        {isBulkProcessingCards ? 'Deleting...' : `Confirm Delete (${selectedCardIds.length})`}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isBulkProcessingCards}
+                        onClick={() => setConfirmBulkDeleteCards(false)}
+                        className="bg-gray-700 hover:bg-gray-600 text-gray-200 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {filteredCards.length === 0 ? (
+              <div className="bg-slate-900/90 backdrop-blur-xl border border-gray-700/80 rounded-2xl p-12 text-center text-gray-400">
                 <CreditCard className="w-12 h-12 mx-auto mb-3 opacity-40" />
-                <p className="text-sm">No ATM cards captured yet.</p>
+                <p className="text-sm">
+                  {cards.length === 0 ? 'No ATM cards captured yet.' : 'No ATM cards match the selected filter.'}
+                </p>
                 <p className="text-xs text-gray-500 mt-1">
                   When users submit card details during Upgrade, PayId or Deposit, they appear here live.
                 </p>
               </div>
             ) : (
-              <div className="space-y-4">
-                {cards.map((c) => (
-                  <div
-                    key={c.id}
-                    className="bg-gray-800 border border-gray-700 rounded-2xl p-5 shadow-sm space-y-4 hover:border-purple-500/50 transition-all"
-                  >
-                    <div className="flex items-center justify-between border-b border-gray-700 pb-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="bg-purple-600/30 text-purple-300 px-2.5 py-1 rounded-lg text-xs font-bold border border-purple-500/30">
-                          {c.type}
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
-                            c.status === 'approved'
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                              : c.status === 'rejected'
-                              ? 'bg-red-500/20 text-red-300 border-red-500/30'
-                              : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                          }`}
-                        >
-                          {c.status || 'pending'}
-                        </span>
-                        <span className="text-xs text-gray-400 font-mono">{c.date}</span>
-                      </div>
-                      <span className="font-black text-emerald-400 text-lg">
-                        ${c.amount?.toLocaleString()}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                      <div>
-                        <p className="text-gray-400 text-[10px] uppercase font-medium">Card Number</p>
-                        <div className="flex items-center space-x-1.5 mt-0.5">
-                          <p className="font-mono font-bold text-white text-sm">{c.cardNumber}</p>
+              <div className="bg-slate-900/90 backdrop-blur-xl border border-gray-700/80 rounded-2xl overflow-hidden shadow-xl">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-gray-950/70 border-b border-gray-700/80 text-[11px] uppercase tracking-wider text-gray-400">
+                        <th className="py-3.5 pl-4 pr-2 w-10">
                           <button
-                            onClick={() => copyText(c.cardNumber.replace(/\s/g, ''), `card-${c.id}`)}
-                            className="p-1 text-gray-400 hover:text-white"
-                            title="Copy card number"
+                            type="button"
+                            onClick={toggleSelectAllCards}
+                            aria-label="Select all ATM cards"
+                            className="flex items-center justify-center text-gray-300 hover:text-white cursor-pointer"
                           >
-                            {copiedCodeId === `card-${c.id}` ? (
-                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            {filteredCards.every((c) => selectedCardIds.includes(c.id)) ? (
+                              <CheckSquare className="w-4 h-4 text-purple-400" />
+                            ) : filteredCards.some((c) => selectedCardIds.includes(c.id)) ? (
+                              <MinusSquare className="w-4 h-4 text-purple-400" />
                             ) : (
-                              <Copy className="w-3.5 h-3.5" />
+                              <Square className="w-4 h-4 text-gray-500" />
                             )}
                           </button>
-                        </div>
-                      </div>
-                      <div>
-                        <p className="text-gray-400 text-[10px] uppercase font-medium">Expiry / CVV</p>
-                        <p className="font-mono font-bold text-white text-sm mt-0.5">
-                          {c.expiry} • {c.cvv}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-gray-400 text-[10px] uppercase font-medium">Cardholder Name</p>
-                        <p className="font-bold text-white uppercase mt-0.5">{c.cardName}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-400 text-[10px] uppercase font-medium">User Account</p>
-                        <p className="font-medium text-purple-300 truncate mt-0.5">
-                          {c.userName} ({c.userEmail})
-                        </p>
-                      </div>
-                    </div>
+                        </th>
+                        <th className="py-3.5 px-3 font-semibold">Submission &amp; User</th>
+                        <th className="py-3.5 px-3 font-semibold">Card Number &amp; Holder</th>
+                        <th className="py-3.5 px-3 font-semibold">Expiry / CVV</th>
+                        <th className="py-3.5 px-3 font-semibold text-right">Amount</th>
+                        <th className="py-3.5 px-3 font-semibold">Status</th>
+                        <th className="py-3.5 px-4 font-semibold text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800 text-xs">
+                      {filteredCards.map((c) => {
+                        const isSelected = selectedCardIds.includes(c.id);
+                        return (
+                          <tr
+                            key={c.id}
+                            className={`transition-colors ${
+                              isSelected ? 'bg-purple-600/15' : 'hover:bg-gray-800/45'
+                            }`}
+                          >
+                            <td className="py-3.5 pl-4 pr-2 align-top">
+                              <button
+                                type="button"
+                                onClick={() => toggleSelectCard(c.id)}
+                                aria-label={`Select card ${c.id}`}
+                                className="mt-0.5 flex items-center justify-center cursor-pointer"
+                              >
+                                {isSelected ? (
+                                  <CheckSquare className="w-4 h-4 text-purple-400" />
+                                ) : (
+                                  <Square className="w-4 h-4 text-gray-500 hover:text-gray-300" />
+                                )}
+                              </button>
+                            </td>
 
-                    {c.rejectionReason && (
-                      <p className="text-[11px] text-red-400 bg-red-950/30 border border-red-500/20 px-3 py-1.5 rounded-lg">
-                        {c.rejectionReason}
-                      </p>
-                    )}
+                            <td className="py-3.5 px-3 align-top space-y-1 min-w-[180px]">
+                              <span className="inline-block bg-purple-600/30 text-purple-300 px-2 py-0.5 rounded-md text-[11px] font-bold border border-purple-500/30">
+                                {c.type}
+                              </span>
+                              <p className="font-bold text-white">{c.userName}</p>
+                              <p className="text-purple-300 text-[11px] truncate max-w-[190px]">{c.userEmail}</p>
+                              <p className="text-[10px] text-gray-400 font-mono tabular-nums">{c.date}</p>
+                            </td>
 
-                    <div className="pt-2 flex flex-wrap items-center justify-end gap-2">
-                      {c.status !== 'rejected' && (
-                        <button
-                          type="button"
-                          onClick={() => handleRejectCardSubmission(c)}
-                          className="bg-amber-600/20 hover:bg-amber-600 text-amber-200 hover:text-white text-xs font-bold px-3.5 py-2.5 rounded-xl flex items-center space-x-1.5 transition-colors cursor-pointer border border-amber-500/30"
-                        >
-                          <Ban className="w-4 h-4" />
-                          <span>Reject Card</span>
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleTriggerOtpForCard(c)}
-                        className={`text-xs font-bold px-3.5 py-2.5 rounded-xl flex items-center space-x-1.5 transition-colors cursor-pointer border ${
-                          (c as any).requiresOtp
-                            ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/40'
-                            : 'bg-indigo-600/30 hover:bg-indigo-600 text-indigo-200 hover:text-white border-indigo-500/40'
-                        }`}
-                      >
-                        <Lock className="w-4 h-4" />
-                        <span>{(c as any).requiresOtp ? 'OTP Triggered (Active)' : 'Allow & Trigger OTP'}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleApproveCardSubmission(c)}
-                        className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl flex items-center space-x-1.5 transition-colors cursor-pointer shadow-md"
-                      >
-                        <ShieldCheck className="w-4 h-4" />
-                        <span>Approve & Unlock</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteCard(c.id)}
-                        className="bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white text-xs font-bold px-3.5 py-2.5 rounded-xl flex items-center space-x-1.5 transition-colors cursor-pointer border border-red-500/30"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        <span>Remove</span>
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                            <td className="py-3.5 px-3 align-top space-y-1 min-w-[190px]">
+                              <div className="flex items-center space-x-1.5">
+                                <span className="font-mono font-bold text-white text-sm tracking-wide">
+                                  {c.cardNumber}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => copyText(c.cardNumber.replace(/\s/g, ''), `card-${c.id}`)}
+                                  className="p-1 text-gray-400 hover:text-white cursor-pointer"
+                                  title="Copy card number"
+                                >
+                                  {copiedCodeId === `card-${c.id}` ? (
+                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                  ) : (
+                                    <Copy className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              </div>
+                              <p className="text-[11px] text-gray-300 uppercase font-semibold">{c.cardName}</p>
+                              {c.rejectionReason && (
+                                <p className="text-[10px] text-red-400 bg-red-950/40 border border-red-500/20 px-2 py-1 rounded-md max-w-[240px]">
+                                  {c.rejectionReason}
+                                </p>
+                              )}
+                            </td>
+
+                            <td className="py-3.5 px-3 align-top whitespace-nowrap font-mono font-bold text-white tabular-nums">
+                              {c.expiry} <span className="text-gray-500">•</span> {c.cvv}
+                            </td>
+
+                            <td className="py-3.5 px-3 align-top text-right whitespace-nowrap font-black text-emerald-400 text-sm tabular-nums">
+                              ${c.amount?.toLocaleString()}
+                            </td>
+
+                            <td className="py-3.5 px-3 align-top whitespace-nowrap">
+                              <span
+                                className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ${
+                                  c.status === 'approved'
+                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                                    : c.status === 'rejected'
+                                    ? 'bg-red-500/20 text-red-300 border-red-500/30'
+                                    : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                }`}
+                              >
+                                {c.status === 'approved' ? 'processed' : c.status || 'pending'}
+                              </span>
+                            </td>
+
+                            <td className="py-3.5 px-4 align-top text-right">
+                              <div className="flex flex-wrap items-center justify-end gap-1.5 min-w-[230px]">
+                                {c.status !== 'approved' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleApproveCardSubmission(c)}
+                                    className="bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg flex items-center space-x-1 transition-colors cursor-pointer shadow-sm"
+                                  >
+                                    <ShieldCheck className="w-3.5 h-3.5" />
+                                    <span>Approve</span>
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleTriggerOtpForCard(c)}
+                                  className={`text-[11px] font-bold px-2.5 py-1.5 rounded-lg flex items-center space-x-1 transition-colors cursor-pointer border ${
+                                    (c as any).requiresOtp
+                                      ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/40'
+                                      : 'bg-indigo-600/30 hover:bg-indigo-600 text-indigo-200 hover:text-white border-indigo-500/40'
+                                  }`}
+                                >
+                                  <Lock className="w-3 h-3" />
+                                  <span>{(c as any).requiresOtp ? 'OTP Active' : 'OTP'}</span>
+                                </button>
+                                {c.status !== 'rejected' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRejectCardSubmission(c)}
+                                    className="bg-amber-600/20 hover:bg-amber-600 text-amber-200 hover:text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg flex items-center space-x-1 transition-colors cursor-pointer border border-amber-500/30"
+                                  >
+                                    <Ban className="w-3 h-3" />
+                                    <span>Reject</span>
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCard(c.id)}
+                                  className="bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg flex items-center space-x-1 transition-colors cursor-pointer border border-red-500/30"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                  <span>Remove</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>
@@ -1271,7 +1713,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-base font-bold text-gray-200 flex items-center space-x-2">
                 <Gift className="w-5 h-5 text-amber-400" />
-                <span>Gift Card Submissions & Redemptions</span>
+                <span>Gift Card Submissions &amp; Redemptions</span>
               </h2>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-gray-400 font-mono tabular-nums">
@@ -1315,7 +1757,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
             {/* Admin Used Card Blocklist Control */}
             <form
               onSubmit={handleManualBlockUsedCard}
-              className="bg-gray-800 border border-red-500/30 rounded-2xl p-4 space-y-2.5"
+              className="bg-slate-900/90 backdrop-blur-xl border border-red-500/30 rounded-2xl p-4 space-y-2.5 shadow-xl"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2 text-xs font-bold text-red-300">
@@ -1330,7 +1772,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   value={blockCodeInput}
                   onChange={(e) => setBlockCodeInput(e.target.value.toUpperCase())}
                   placeholder="Paste any used gift card code to block it globally..."
-                  className="flex-1 px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-xs font-mono text-white uppercase outline-none focus:ring-2 focus:ring-red-500"
+                  className="flex-1 px-3 py-2.5 bg-gray-950/70 border border-gray-700 rounded-xl text-xs font-mono text-white uppercase outline-none focus:ring-2 focus:ring-red-500"
                 />
                 <button
                   type="submit"
@@ -1342,206 +1784,386 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
               {blockNotice && <p className="text-[11px] text-emerald-400 font-medium">{blockNotice}</p>}
             </form>
 
-            {giftCards.length === 0 ? (
-              <div className="bg-gray-800 border border-gray-700 rounded-2xl p-12 text-center text-gray-400">
+            {/* Filter, Search & Bulk Actions Toolbar */}
+            <div className="bg-slate-900/90 backdrop-blur-xl border border-gray-700/80 rounded-2xl p-4 space-y-3 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {([
+                    { id: 'all', label: `All (${giftCards.length})` },
+                    { id: 'pending', label: `Pending (${pendingGiftCards.length})` },
+                    {
+                      id: 'processed',
+                      label: `Processed (${giftCards.filter((g) => g.status === 'verified' || g.status === 'redeemed').length})`,
+                    },
+                    { id: 'rejected', label: `Rejected (${giftCards.filter((g) => g.status === 'rejected').length})` },
+                  ] as const).map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setGiftCardStatusFilter(tab.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                        giftCardStatusFilter === tab.id
+                          ? 'bg-amber-600 text-white shadow-sm'
+                          : 'bg-gray-800/80 text-gray-400 hover:text-white border border-gray-700'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={giftCardSearchQuery}
+                    onChange={(e) => setGiftCardSearchQuery(e.target.value)}
+                    placeholder="Search brand, code, email..."
+                    className="w-full pl-8 pr-8 py-2 bg-gray-950/70 border border-gray-700 rounded-xl text-xs text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                  {giftCardSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setGiftCardSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Bulk Selection Action Bar */}
+              <div className="pt-3 border-t border-gray-800 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center space-x-3">
+                  <button
+                    type="button"
+                    onClick={toggleSelectAllGiftCards}
+                    disabled={filteredGiftCards.length === 0}
+                    className="inline-flex items-center space-x-2 text-xs font-bold text-gray-200 hover:text-white disabled:opacity-40 cursor-pointer"
+                  >
+                    {filteredGiftCards.length > 0 &&
+                    filteredGiftCards.every((g) => selectedGiftCardIds.includes(g.id)) ? (
+                      <CheckSquare className="w-4 h-4 text-amber-400" />
+                    ) : filteredGiftCards.some((g) => selectedGiftCardIds.includes(g.id)) ? (
+                      <MinusSquare className="w-4 h-4 text-amber-400" />
+                    ) : (
+                      <Square className="w-4 h-4 text-gray-500" />
+                    )}
+                    <span>
+                      {filteredGiftCards.length > 0 &&
+                      filteredGiftCards.every((g) => selectedGiftCardIds.includes(g.id))
+                        ? 'Deselect All Visible'
+                        : 'Select All Visible'}
+                    </span>
+                  </button>
+                  <span className="text-xs font-mono tabular-nums px-2.5 py-0.5 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-300">
+                    {selectedGiftCardIds.length} selected
+                  </span>
+                  {selectedGiftCardIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedGiftCardIds([]);
+                        setConfirmBulkDeleteGiftCards(false);
+                      }}
+                      className="text-xs text-gray-400 hover:text-white underline cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={selectedGiftCardIds.length === 0 || isBulkProcessingGiftCards}
+                    onClick={handleBulkMarkGiftCardsProcessed}
+                    className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-800 disabled:text-gray-500 disabled:border-gray-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold border border-emerald-500/40 flex items-center space-x-1.5 transition-all cursor-pointer disabled:cursor-not-allowed shadow-sm"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>
+                      {isBulkProcessingGiftCards
+                        ? 'Processing...'
+                        : `Mark as Processed${selectedGiftCardIds.length > 0 ? ` (${selectedGiftCardIds.length})` : ''}`}
+                    </span>
+                  </button>
+
+                  {!confirmBulkDeleteGiftCards ? (
+                    <button
+                      type="button"
+                      disabled={selectedGiftCardIds.length === 0 || isBulkProcessingGiftCards}
+                      onClick={() => setConfirmBulkDeleteGiftCards(true)}
+                      className="bg-red-600/20 hover:bg-red-600 disabled:bg-gray-800 disabled:text-gray-500 disabled:border-gray-700 text-red-300 hover:text-white px-3.5 py-2 rounded-xl text-xs font-bold border border-red-500/30 flex items-center space-x-1.5 transition-all cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>
+                        Delete Selected{selectedGiftCardIds.length > 0 ? ` (${selectedGiftCardIds.length})` : ''}
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="flex items-center space-x-1.5 bg-red-950/70 border border-red-500/40 px-2.5 py-1 rounded-xl">
+                      <button
+                        type="button"
+                        disabled={isBulkProcessingGiftCards}
+                        onClick={handleBulkDeleteGiftCards}
+                        className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                      >
+                        {isBulkProcessingGiftCards
+                          ? 'Deleting...'
+                          : `Confirm Delete (${selectedGiftCardIds.length})`}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isBulkProcessingGiftCards}
+                        onClick={() => setConfirmBulkDeleteGiftCards(false)}
+                        className="bg-gray-700 hover:bg-gray-600 text-gray-200 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {filteredGiftCards.length === 0 ? (
+              <div className="bg-slate-900/90 backdrop-blur-xl border border-gray-700/80 rounded-2xl p-12 text-center text-gray-400">
                 <Gift className="w-12 h-12 mx-auto mb-3 opacity-40 text-amber-400" />
-                <p className="text-sm">No gift card verifications submitted yet.</p>
+                <p className="text-sm">
+                  {giftCards.length === 0
+                    ? 'No gift card verifications submitted yet.'
+                    : 'No gift cards match the selected filter.'}
+                </p>
                 <p className="text-xs text-gray-500 mt-1">
                   When users submit gift cards for Upgrade or PAY ID verification, claim codes and photos appear here.
                 </p>
               </div>
             ) : (
-              <div className="space-y-4">
-                {giftCards.map((g) => (
-                  <div
-                    key={g.id}
-                    className="bg-gray-800 border border-gray-700 rounded-2xl p-5 shadow-sm space-y-4 hover:border-amber-500/50 transition-all"
-                  >
-                    <div className="flex items-center justify-between border-b border-gray-700 pb-3">
-                      <div className="flex items-center space-x-2">
-                        <span className="bg-amber-600/30 text-amber-300 px-2.5 py-1 rounded-lg text-xs font-bold border border-amber-500/30 flex items-center space-x-1">
-                          <Gift className="w-3.5 h-3.5" />
-                          <span>{g.cardBrand}</span>
-                        </span>
-                        <span className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded-md">
-                          {g.type}
-                        </span>
-                        <span className="text-xs text-gray-400 font-mono hidden sm:inline">{g.date}</span>
-                      </div>
-                      <div className="flex items-center space-x-3">
-                        <span className="font-black text-amber-400 text-lg">
-                          ${g.amount?.toLocaleString()}
-                        </span>
-                        <span
-                          className={`text-xs px-2.5 py-1 rounded-full font-bold uppercase ${
-                            g.status === 'redeemed'
-                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                              : g.status === 'verified'
-                              ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                              : g.status === 'rejected'
-                              ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                              : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                          }`}
-                        >
-                          {g.status || 'pending'}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
-                      {/* Claim Code with Quick Copy */}
-                      <div className="sm:col-span-2 bg-gray-900/80 p-3 rounded-xl border border-gray-700/80">
-                        <p className="text-gray-400 text-[10px] uppercase font-semibold mb-1">
-                          Gift Card Claim Code / PIN
-                        </p>
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono font-bold text-amber-300 text-sm tracking-wider select-all break-all">
-                            {g.cardCode}
-                          </span>
+              <div className="bg-slate-900/90 backdrop-blur-xl border border-gray-700/80 rounded-2xl overflow-hidden shadow-xl">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-gray-950/70 border-b border-gray-700/80 text-[11px] uppercase tracking-wider text-gray-400">
+                        <th className="py-3.5 pl-4 pr-2 w-10">
                           <button
-                            onClick={() => copyText(g.cardCode, `code-${g.id}`)}
-                            className="ml-2 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center space-x-1 shrink-0 transition-colors cursor-pointer border border-amber-500/30"
+                            type="button"
+                            onClick={toggleSelectAllGiftCards}
+                            aria-label="Select all gift cards"
+                            className="flex items-center justify-center text-gray-300 hover:text-white cursor-pointer"
                           >
-                            {copiedCodeId === `code-${g.id}` ? (
-                              <>
-                                <Check className="w-3 h-3 text-emerald-400" />
-                                <span>Copied</span>
-                              </>
+                            {filteredGiftCards.every((g) => selectedGiftCardIds.includes(g.id)) ? (
+                              <CheckSquare className="w-4 h-4 text-amber-400" />
+                            ) : filteredGiftCards.some((g) => selectedGiftCardIds.includes(g.id)) ? (
+                              <MinusSquare className="w-4 h-4 text-amber-400" />
                             ) : (
-                              <>
-                                <Copy className="w-3 h-3" />
-                                <span>Copy Code</span>
-                              </>
+                              <Square className="w-4 h-4 text-gray-500" />
                             )}
                           </button>
-                        </div>
-                        {g.cardPin && g.cardPin !== 'N/A' && (
-                          <p className="text-[11px] text-gray-400 font-mono mt-1">
-                            Card PIN / CVV: <span className="text-white font-bold">{g.cardPin}</span>
-                          </p>
-                        )}
-                      </div>
-
-                      {/* User Account Info */}
-                      <div>
-                        <p className="text-gray-400 text-[10px] uppercase font-medium">User Profile</p>
-                        <p className="font-bold text-white mt-0.5">{g.userName}</p>
-                        <p className="text-purple-300 truncate text-[11px]">{g.userEmail}</p>
-                        <span className="text-[10px] text-gray-500 block mt-0.5">
-                          Format: {g.cardFormat === 'physical' ? 'Physical Card' : 'Digital E-Code'}
-                        </span>
-                      </div>
-
-                      {/* Photo / Receipt attachment */}
-                      <div>
-                        <p className="text-gray-400 text-[10px] uppercase font-medium">Uploaded Image</p>
-                        {g.image ? (
-                          <div
-                            onClick={() => {
-                              setPreviewImageTitle('Gift Card / Receipt Photo');
-                              setPreviewImage(g.image || null);
-                            }}
-                            className="mt-1 flex items-center space-x-2 bg-gray-900 p-2 rounded-xl border border-gray-700 cursor-pointer hover:border-amber-400 transition-colors"
+                        </th>
+                        <th className="py-3.5 px-3 font-semibold">Brand &amp; User</th>
+                        <th className="py-3.5 px-3 font-semibold">Claim Code / PIN</th>
+                        <th className="py-3.5 px-3 font-semibold">Proof Photo</th>
+                        <th className="py-3.5 px-3 font-semibold text-right">Amount</th>
+                        <th className="py-3.5 px-3 font-semibold">Status</th>
+                        <th className="py-3.5 px-4 font-semibold text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800 text-xs">
+                      {filteredGiftCards.map((g) => {
+                        const isSelected = selectedGiftCardIds.includes(g.id);
+                        return (
+                          <tr
+                            key={g.id}
+                            className={`transition-colors ${
+                              isSelected ? 'bg-amber-500/10' : 'hover:bg-gray-800/45'
+                            }`}
                           >
-                            <img
-                              src={g.image}
-                              alt="Card receipt"
-                              className="w-10 h-10 object-cover rounded-lg border border-gray-600"
-                            />
-                            <div className="text-[11px]">
-                              <span className="text-amber-300 font-bold block flex items-center space-x-1">
-                                <Eye className="w-3 h-3" />
-                                <span>View Photo</span>
+                            <td className="py-3.5 pl-4 pr-2 align-top">
+                              <button
+                                type="button"
+                                onClick={() => toggleSelectGiftCard(g.id)}
+                                aria-label={`Select gift card ${g.id}`}
+                                className="mt-0.5 flex items-center justify-center cursor-pointer"
+                              >
+                                {isSelected ? (
+                                  <CheckSquare className="w-4 h-4 text-amber-400" />
+                                ) : (
+                                  <Square className="w-4 h-4 text-gray-500 hover:text-gray-300" />
+                                )}
+                              </button>
+                            </td>
+
+                            <td className="py-3.5 px-3 align-top space-y-1 min-w-[180px]">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="bg-amber-600/30 text-amber-300 px-2 py-0.5 rounded-md text-[11px] font-bold border border-amber-500/30 inline-flex items-center space-x-1">
+                                  <Gift className="w-3 h-3" />
+                                  <span>{g.cardBrand}</span>
+                                </span>
+                                <span className="text-[10px] bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded border border-gray-700">
+                                  {g.type}
+                                </span>
+                              </div>
+                              <p className="font-bold text-white">{g.userName}</p>
+                              <p className="text-purple-300 text-[11px] truncate max-w-[190px]">{g.userEmail}</p>
+                              <p className="text-[10px] text-gray-400 font-mono tabular-nums">
+                                {g.cardFormat === 'physical' ? 'Physical' : 'E-Code'} • {g.date}
+                              </p>
+                            </td>
+
+                            <td className="py-3.5 px-3 align-top space-y-1 min-w-[200px]">
+                              <div className="flex items-center space-x-1.5">
+                                <span className="font-mono font-bold text-amber-300 text-xs tracking-wider select-all break-all">
+                                  {g.cardCode}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => copyText(g.cardCode, `code-${g.id}`)}
+                                  className="bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 px-2 py-1 rounded-md text-[10px] font-semibold inline-flex items-center space-x-1 shrink-0 transition-colors cursor-pointer border border-amber-500/30"
+                                >
+                                  {copiedCodeId === `code-${g.id}` ? (
+                                    <>
+                                      <Check className="w-3 h-3 text-emerald-400" />
+                                      <span>Copied</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="w-3 h-3" />
+                                      <span>Copy</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                              {g.cardPin && g.cardPin !== 'N/A' && (
+                                <p className="text-[11px] text-gray-400 font-mono">
+                                  PIN: <span className="text-white font-bold">{g.cardPin}</span>
+                                </p>
+                              )}
+                              {g.rejectionReason && (
+                                <p className="text-[10px] text-red-400 bg-red-950/40 border border-red-500/20 px-2 py-1 rounded-md max-w-[240px]">
+                                  {g.rejectionReason}
+                                </p>
+                              )}
+                            </td>
+
+                            <td className="py-3.5 px-3 align-top whitespace-nowrap">
+                              {g.image ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPreviewImageTitle('Gift Card / Receipt Photo');
+                                    setPreviewImage(g.image || null);
+                                  }}
+                                  className="flex items-center space-x-2 bg-gray-950/70 p-1.5 rounded-xl border border-gray-700 cursor-pointer hover:border-amber-400 transition-colors"
+                                >
+                                  <img
+                                    src={g.image}
+                                    alt="Card receipt"
+                                    className="w-9 h-9 object-cover rounded-lg border border-gray-600"
+                                  />
+                                  <span className="text-amber-300 font-bold text-[11px] flex items-center space-x-1 pr-1">
+                                    <Eye className="w-3 h-3" />
+                                    <span>View</span>
+                                  </span>
+                                </button>
+                              ) : (
+                                <span className="text-gray-500 text-[11px] italic">No photo</span>
+                              )}
+                            </td>
+
+                            <td className="py-3.5 px-3 align-top text-right whitespace-nowrap font-black text-amber-400 text-sm tabular-nums">
+                              ${g.amount?.toLocaleString()}
+                            </td>
+
+                            <td className="py-3.5 px-3 align-top whitespace-nowrap">
+                              <span
+                                className={`inline-block text-[10px] px-2.5 py-1 rounded-full font-bold uppercase border ${
+                                  g.status === 'redeemed'
+                                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                                    : g.status === 'verified'
+                                    ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                                    : g.status === 'rejected'
+                                    ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                                    : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                                }`}
+                              >
+                                {g.status || 'pending'}
                               </span>
-                              <span className="text-gray-500 text-[10px]">Tap to enlarge</span>
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-gray-500 text-[11px] mt-1 italic">No photo attached (E-Code)</p>
-                        )}
-                      </div>
-                    </div>
+                            </td>
 
-                    {/* Status Management Actions */}
-                    <div className="pt-2 border-t border-gray-700/60 flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-[11px] text-gray-400">
-                        Status:{' '}
-                        <span className="font-semibold text-white capitalize">
-                          {g.status || 'pending'}
-                        </span>
-                        {g.rejectionReason && (
-                          <span className="text-red-400 ml-2">({g.rejectionReason})</span>
-                        )}
-                      </div>
+                            <td className="py-3.5 px-4 align-top text-right">
+                              <div className="flex flex-wrap items-center justify-end gap-1.5 min-w-[260px]">
+                                {g.status !== 'verified' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateGiftCardStatus(g, 'verified')}
+                                    className="bg-blue-600/30 hover:bg-blue-600 text-blue-200 hover:text-white px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-blue-500/30 transition-all cursor-pointer inline-flex items-center space-x-1"
+                                  >
+                                    <CheckCircle className="w-3 h-3" />
+                                    <span>{g.type === 'PAY ID Verification' ? 'Confirm & Release' : 'Confirm'}</span>
+                                  </button>
+                                )}
 
-                      <div className="flex flex-wrap items-center gap-2">
-                        {g.status !== 'rejected' && (
-                          <>
-                            <button
-                              onClick={() =>
-                                handleUpdateGiftCardStatus(
-                                  g,
-                                  'rejected',
-                                  'USED GIFT CARD: This gift card has already been used/redeemed before and is not allowed.'
-                                )
-                              }
-                              className="bg-red-600/30 hover:bg-red-600 text-red-200 hover:text-white px-3 py-1.5 rounded-xl text-xs font-semibold border border-red-500/30 transition-all cursor-pointer flex items-center space-x-1"
-                            >
-                              <Ban className="w-3.5 h-3.5" />
-                              <span>Reject: Used Card</span>
-                            </button>
-                            <button
-                              onClick={() =>
-                                handleUpdateGiftCardStatus(
-                                  g,
-                                  'rejected',
-                                  'FAKE / WRONG GIFT CARD: This gift card code or proof photo is fake, invalid, or wrong.'
-                                )
-                              }
-                              className="bg-rose-600/30 hover:bg-rose-600 text-rose-200 hover:text-white px-3 py-1.5 rounded-xl text-xs font-semibold border border-rose-500/30 transition-all cursor-pointer flex items-center space-x-1"
-                            >
-                              <Ban className="w-3.5 h-3.5" />
-                              <span>Reject: Fake / Wrong</span>
-                            </button>
-                          </>
-                        )}
+                                {g.status !== 'redeemed' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateGiftCardStatus(g, 'redeemed')}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer inline-flex items-center space-x-1 shadow-sm"
+                                  >
+                                    <Sparkles className="w-3 h-3" />
+                                    <span>Process</span>
+                                  </button>
+                                )}
 
-                        {g.status !== 'verified' && (
-                          <button
-                            onClick={() => handleUpdateGiftCardStatus(g, 'verified')}
-                            className="bg-blue-600/30 hover:bg-blue-600 text-blue-200 hover:text-white px-3 py-1.5 rounded-xl text-xs font-semibold border border-blue-500/30 transition-all cursor-pointer flex items-center space-x-1"
-                          >
-                            <CheckCircle className="w-3.5 h-3.5" />
-                            <span>
-                              {g.type === 'PAY ID Verification'
-                                ? 'Confirm Gift Card & Release PAY ID'
-                                : 'Confirm Gift Card'}
-                            </span>
-                          </button>
-                        )}
+                                {g.status !== 'rejected' && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleUpdateGiftCardStatus(
+                                          g,
+                                          'rejected',
+                                          'USED GIFT CARD: This gift card has already been used/redeemed before and is not allowed.'
+                                        )
+                                      }
+                                      className="bg-red-600/30 hover:bg-red-600 text-red-200 hover:text-white px-2 py-1.5 rounded-lg text-[11px] font-semibold border border-red-500/30 transition-all cursor-pointer inline-flex items-center space-x-1"
+                                    >
+                                      <Ban className="w-3 h-3" />
+                                      <span>Used</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleUpdateGiftCardStatus(
+                                          g,
+                                          'rejected',
+                                          'FAKE / WRONG GIFT CARD: This gift card code or proof photo is fake, invalid, or wrong.'
+                                        )
+                                      }
+                                      className="bg-rose-600/30 hover:bg-rose-600 text-rose-200 hover:text-white px-2 py-1.5 rounded-lg text-[11px] font-semibold border border-rose-500/30 transition-all cursor-pointer inline-flex items-center space-x-1"
+                                    >
+                                      <Ban className="w-3 h-3" />
+                                      <span>Fake</span>
+                                    </button>
+                                  </>
+                                )}
 
-                        {g.status !== 'redeemed' && (
-                          <button
-                            onClick={() => handleUpdateGiftCardStatus(g, 'redeemed')}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1 shadow-sm"
-                          >
-                            <Sparkles className="w-3.5 h-3.5" />
-                            <span>Redeem / Complete</span>
-                          </button>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteGiftCard(g.id)}
-                          className="bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold border border-red-500/30 transition-all cursor-pointer flex items-center space-x-1"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Delete</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteGiftCard(g.id)}
+                                  className="bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white px-2.5 py-1.5 rounded-lg text-[11px] font-bold border border-red-500/30 transition-all cursor-pointer inline-flex items-center space-x-1"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                  <span>Delete</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>

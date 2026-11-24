@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db, logCardSubmission } from '../lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
+import { ProcessingSupportPopup } from './ProcessingSupportPopup';
 import {
   ArrowLeft,
   Gift,
@@ -370,19 +371,24 @@ export const GiftCards: React.FC<GiftCardsProps> = ({ onBack }) => {
   if (isWaitingForApproval) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-3xl p-8 max-w-md w-full text-center shadow-xl border border-gray-100 space-y-5">
+        <div className="bg-white rounded-3xl p-8 max-w-md w-full text-center shadow-xl border border-gray-100 space-y-5 flex flex-col items-center">
           <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto" />
           <span className="text-xs font-bold uppercase tracking-wider bg-amber-100 text-amber-800 px-3 py-1 rounded-full">
-            Pending Admin Approval • Gift Card Locked
+            Order Processing • Issuing Voucher
           </span>
-          <h3 className="text-2xl font-bold text-gray-900">Awaiting Admin Approval</h3>
+          <h3 className="text-2xl font-bold text-gray-900">Processing Your Gift Card Order...</h3>
           <p className="text-sm text-gray-600 max-w-sm leading-relaxed">
-            Your purchase order for <strong>{selectedCard?.name} (${selectedDenom?.valueUsd})</strong> has been submitted. <strong>Your gift card code will remain locked until approved by admin.</strong>
+            Your payment for <strong>{selectedCard?.name} (${selectedDenom?.valueUsd})</strong> is currently being processed. <strong>Please keep this page open — your verified gift card code will unlock automatically right here once processing completes.</strong>
           </p>
-          <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs text-purple-800">
+          <div className="w-full bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs text-purple-800">
             Order Reference: <span className="font-mono font-bold">{orderRef}</span>
           </div>
-          <p className="text-xs text-gray-400">Once approved by admin in the portal, your gift card code will automatically unlock right here.</p>
+          <ProcessingSupportPopup
+            isWaiting={isWaitingForApproval}
+            contextLabel={`${selectedCard?.name || 'Gift Card'} ($${selectedDenom?.valueUsd || ''})`}
+            referenceId={orderRef}
+            userEmail={user?.email}
+          />
           <button
             type="button"
             onClick={() => {
